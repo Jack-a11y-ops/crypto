@@ -113,8 +113,14 @@ async function run() {
 
         // 3. 獲取幣安前 50 大成交量 USDT 交易對
         console.log('正在從幣安獲取前 50 大成交量交易對...');
-        const tickersResponse = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+        const tickersResponse = await fetch('https://data-api.binance.vision/api/v3/ticker/24hr');
         const tickers = await tickersResponse.json();
+        
+        if (!Array.isArray(tickers)) {
+            console.error('錯誤：幣安 API 未回傳陣列格式。可能是被地理位置封鎖或超頻限制。返回內容：', JSON.stringify(tickers));
+            process.exit(1);
+        }
+
         const top50 = tickers
             .filter(t => t.symbol.endsWith('USDT'))
             .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
@@ -125,11 +131,11 @@ async function run() {
         // 4. 批量分析每個交易對
         for (const item of top50) {
             try {
-                const klinesUrl = `https://api.binance.com/api/v3/klines?symbol=${item.symbol}&interval=${interval}&limit=150`;
+                const klinesUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${item.symbol}&interval=${interval}&limit=150`;
                 const klinesResponse = await fetch(klinesUrl);
                 const klines = await klinesResponse.json();
                 
-                if (klines.length < 100) continue;
+                if (!Array.isArray(klines) || klines.length < 100) continue;
 
                 const chartData = klines.map(d => ({
                     close: parseFloat(d[4]), high: parseFloat(d[2]), low: parseFloat(d[3])
