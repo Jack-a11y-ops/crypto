@@ -242,6 +242,11 @@ async function run() {
                 }
             };
 
+            // 如果存在 Private Key (嚴格模式)，則附加 accessToken 進行安全發信
+            if (process.env.EMAILJS_PRIVATE_KEY) {
+                emailParams.accessToken = process.env.EMAILJS_PRIVATE_KEY;
+            }
+
             const emailResponse = await fetch(emailjsUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
