@@ -82,7 +82,8 @@ function analyzeSNR(data, lastPrice) {
 
 // 主執行流程
 async function run() {
-    console.log(`[${new Date().toLocaleString()}] 啟動 SNR 雷達雲端掃描，目標使用者: ${userEmail}...`);
+    const taipeiTimeStr = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
+    console.log(`[${taipeiTimeStr}] 啟動 SNR 雷達雲端掃描，目標使用者: ${userEmail}...`);
 
     try {
         // 2. 獲取 Firebase 雲端資料 (設定、歷史紀錄、已通知列表)
@@ -180,8 +181,9 @@ async function run() {
         if (newOpportunities.length > 0) {
             console.log(`發現 ${newOpportunities.length} 個新機會！準備發送 Email 通知...`);
 
-            // 6.1 格式化郵件內文
-            let messageText = `親愛的 SNR TRACER 使用者，您好：\n\n系統已在雲端背景掃描中，偵測到符合條件的優質交易機會！\n\n`;
+            // 6.1 格式化郵件內文 (強制採用台灣時間 GMT+8)
+            const taipeiTimeStr = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
+            let messageText = `親愛的 SNR TRACER 使用者，您好：\n\n系統已在雲端背景掃描中，偵測到符合條件的優質交易機會！\n\n偵測時間（台灣時間）：${taipeiTimeStr}\n\n`;
             messageText += `雷達週期：${interval.toUpperCase()}\n\n`;
             messageText += `【新交易機會清單】:\n`;
             
@@ -203,8 +205,22 @@ async function run() {
                 );
 
                 if (!isDuplicate) {
-                    const date = new Date(now);
-                    const timeStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+                    // 將時間轉換為台灣時區的年月日與時分秒，防範 GitHub Actions 伺服器時區誤差
+                    const formatter = new Intl.DateTimeFormat('zh-TW', {
+                        timeZone: 'Asia/Taipei',
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    });
+                    const parts = formatter.formatToParts(new Date(now));
+                    const partMap = {};
+                    parts.forEach(p => partMap[p.type] = p.value);
+                    const timeStr = `${partMap.year}-${partMap.month}-${partMap.day} ${partMap.hour}:${partMap.minute}:${partMap.second}`;
+
                     history.unshift({
                         id: now,
                         timeStr: timeStr,
