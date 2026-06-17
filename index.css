@@ -1,0 +1,1219 @@
+:root {
+    --bg-color: #0b0e11;
+    --card-bg: rgba(24, 26, 32, 0.8);
+    --text-main: #eaecef;
+    --text-muted: #848e9c;
+    --accent-color: #f0b90b;
+    /* Binance Yellow */
+    --green: #0ecb81;
+    --red: #f6465d;
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --border-radius: 12px;
+    --font-main: 'Inter', sans-serif;
+    --font-heading: 'Outfit', sans-serif;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    font-family: var(--font-main);
+    line-height: 1.6;
+    overflow-x: hidden;
+    background-image:
+        radial-gradient(circle at 10% 20%, rgba(240, 185, 11, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(14, 203, 129, 0.05) 0%, transparent 40%);
+    min-height: 100vh;
+}
+
+.app-container {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* Header Styles */
+.main-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background: var(--card-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.logo-icon {
+    font-size: 24px;
+    color: var(--accent-color);
+    text-shadow: 0 0 10px rgba(240, 185, 11, 0.5);
+}
+
+.logo .logo-icon {
+    font-size: 34px;
+    text-shadow: 0 0 15px rgba(240, 185, 11, 0.6);
+}
+
+.logo h1 {
+    font-family: var(--font-heading);
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+}
+
+.logo .accent {
+    color: var(--accent-color);
+}
+
+.market-info {
+    display: flex;
+    gap: 40px;
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.info-item .label {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.info-item .value {
+    font-size: 18px;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+}
+
+.info-item .value.highlight {
+    color: var(--accent-color);
+}
+
+.search-bar {
+    display: flex;
+    gap: 10px;
+}
+
+.search-bar input {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    padding: 10px 15px;
+    border-radius: 8px;
+    color: white;
+    width: 220px;
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+.search-bar input:focus {
+    border-color: var(--accent-color);
+}
+
+.search-bar button {
+    background: var(--accent-color);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, opacity 0.2s;
+}
+
+.search-bar button:hover {
+    transform: translateY(-2px);
+    opacity: 0.9;
+}
+
+/* Tab Navigation Styles */
+.tabs-navigation {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 5px;
+    background: var(--card-bg);
+    padding: 8px;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(10px);
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 12px 24px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    font-family: var(--font-heading);
+}
+
+.tab-btn:hover {
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.tab-btn.active {
+    color: black;
+    background: var(--accent-color);
+    box-shadow: 0 0 15px rgba(240, 185, 11, 0.3);
+}
+
+/* Tab Display Control */
+.tab-content {
+    display: none;
+    animation: fadeIn 0.4s ease-out;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Dashboard Layout */
+.dashboard {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 20px;
+}
+
+/* Card General Styles */
+.card {
+    background: var(--card-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 10px;
+}
+
+.card-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+/* Chart Styles */
+.chart-section {
+    min-height: 600px;
+}
+
+.chart-container {
+    flex: 1;
+    width: 100%;
+}
+
+.chart-controls {
+    display: flex;
+    gap: 5px;
+}
+
+.interval-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    color: var(--text-muted);
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.interval-btn.active {
+    background: var(--accent-color);
+    color: black;
+    border-color: var(--accent-color);
+}
+
+/* Analysis Side Panel */
+.analysis-section {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.signal-card {
+    border-left: 4px solid var(--accent-color);
+}
+
+.status-badge {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+}
+
+.signal-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--glass-border);
+}
+
+.signal-row .label {
+    color: var(--text-muted);
+}
+
+.signal-row .value {
+    font-weight: 600;
+}
+
+.text-green {
+    color: var(--green);
+}
+
+.text-red {
+    color: var(--red);
+}
+
+.reason-content {
+    font-size: 14px;
+    color: var(--text-main);
+    line-height: 1.8;
+}
+
+.levels-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.level-pill {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
+    font-size: 13px;
+    border-left: 3px solid transparent;
+}
+
+.level-pill.resistance {
+    border-left-color: var(--red);
+}
+
+.level-pill.support {
+    border-left-color: var(--green);
+}
+
+/* Loader */
+.loader-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-color);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    transition: opacity 0.5s;
+}
+
+.loader-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 3px solid rgba(240, 185, 11, 0.1);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.main-footer {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* Responsiveness */
+@media (max-width: 1024px) {
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 響應式手機端優化 (RWD) */
+@media (max-width: 768px) {
+    /* 1. Header 調整為垂直排版 */
+    .main-header {
+        flex-direction: column;
+        gap: 15px;
+        align-items: stretch;
+        padding: 15px;
+    }
+    
+    .main-header .logo {
+        justify-content: center;
+    }
+    
+    .logo-icon {
+        font-size: 28px;
+    }
+    
+    .logo h1 {
+        font-size: 26px;
+    }
+    
+    .search-bar {
+        width: 100%;
+    }
+    
+    .search-bar input {
+        flex: 1;
+    }
+    
+    .user-profile {
+        justify-content: center;
+        width: 100%;
+        border-bottom: 1px solid var(--glass-border);
+        padding-bottom: 10px;
+    }
+
+    /* 2. Tab 導覽按鈕調整 */
+    .tabs-navigation {
+        gap: 8px;
+        padding: 5px;
+        overflow-x: auto; /* 允許超出版面時滾動 */
+    }
+    
+    .tab-btn {
+        padding: 10px 14px;
+        font-size: 13px;
+        flex: 1;
+        text-align: center;
+        white-space: nowrap; /* 防止字體換行 */
+    }
+
+    /* 3. 圖表高度在手機上調小，避免難以滾動頁面 */
+    .chart-section {
+        min-height: 380px !important;
+        padding: 12px;
+    }
+    
+    .card-header h2 {
+        font-size: 14px;
+    }
+
+    /* 4. 雷達與歷史表格在手機上的字體與間距縮小 */
+    .premium-radar-table th, 
+    .premium-radar-table td {
+        padding: 12px 8px;
+        font-size: 12px;
+    }
+    
+    .premium-radar-table .symbol-name {
+        font-size: 14px;
+    }
+    
+    .premium-radar-table .action-btn {
+        padding: 4px 10px;
+        font-size: 11px;
+    }
+    
+    /* 5. 雷達與歷史控制面板垂直排列 */
+    .scanner-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 15px;
+    }
+    
+    .scanner-controls {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .radar-interval-controls {
+        flex: 1;
+        justify-content: space-around;
+    }
+    
+    .primary-btn {
+        width: 100%;
+        text-align: center;
+    }
+}
+
+@media (max-width: 480px) {
+    /* 6. 計算器與表格面板調整 */
+    .card {
+        padding: 15px;
+    }
+    
+    /* 雷達統計數據改為兩列 */
+    .scanner-stats {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    
+    .stat-card {
+        padding: 10px;
+    }
+    
+    .stat-value {
+        font-size: 18px;
+    }
+}
+
+/* 全市場雷達面板樣式 */
+.scanner-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+    padding: 30px;
+    background: var(--card-bg);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--glass-border);
+}
+
+.scanner-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.scanner-header-text h2 {
+    font-family: var(--font-heading);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.scanner-header-text .subtitle {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-top: 5px;
+}
+
+.primary-btn {
+    background: var(--accent-color);
+    color: black;
+    border: none;
+    padding: 12px 28px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+    box-shadow: 0 4px 15px rgba(240, 185, 11, 0.2);
+}
+
+.primary-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(240, 185, 11, 0.4);
+    opacity: 0.95;
+}
+
+/* 數據摘要卡片樣式 */
+.scanner-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.stat-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 15px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    font-family: var(--font-heading);
+}
+
+.stat-value.highlight {
+    color: var(--accent-color);
+    text-shadow: 0 0 10px rgba(240, 185, 11, 0.3);
+}
+
+/* 高級雷達表格樣式 */
+.radar-table-container {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.premium-radar-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    text-align: left;
+}
+
+.premium-radar-table th {
+    color: var(--text-muted);
+    padding: 15px;
+    border-bottom: 2px solid var(--glass-border);
+    font-weight: 600;
+}
+
+.premium-radar-table td {
+    padding: 18px 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.premium-radar-table tbody tr {
+    transition: background-color 0.25s;
+}
+
+.premium-radar-table tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.premium-radar-table .symbol-name {
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--text-main);
+}
+
+.premium-radar-table .signal-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.premium-radar-table .signal-badge.long {
+    background: rgba(14, 203, 129, 0.1);
+    color: var(--green);
+    border: 1px solid rgba(14, 203, 129, 0.2);
+}
+
+.premium-radar-table .signal-badge.short {
+    background: rgba(246, 70, 93, 0.1);
+    color: var(--red);
+    border: 1px solid rgba(246, 70, 93, 0.2);
+}
+
+.premium-radar-table .rr-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.premium-radar-table .rr-value {
+    font-family: 'Courier New', monospace;
+    font-weight: 700;
+    font-size: 15px;
+}
+
+.premium-radar-table .rr-bar-bg {
+    width: 80px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.premium-radar-table .rr-bar-fill {
+    height: 100%;
+    background: var(--accent-color);
+    border-radius: 3px;
+}
+
+.premium-radar-table .action-btn {
+    background: rgba(240, 185, 11, 0.1);
+    color: var(--accent-color);
+    border: 1px solid var(--accent-color);
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.premium-radar-table .action-btn:hover {
+    background: var(--accent-color);
+    color: black;
+    box-shadow: 0 0 10px rgba(240, 185, 11, 0.2);
+}
+
+/* 雷達時間週期控制項 */
+.scanner-controls {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.radar-interval-controls {
+    display: flex;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid var(--glass-border);
+}
+
+.radar-interval-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.radar-interval-btn:hover {
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.radar-interval-btn.active {
+    background: var(--accent-color);
+    color: black;
+    box-shadow: 0 2px 8px rgba(240, 185, 11, 0.2);
+}
+
+/* 通用隱藏控制 */
+.hidden {
+    display: none !important;
+}
+
+/* 風險與槓桿計算器樣式 */
+.calculator-card {
+    border-left: 4px solid var(--accent-color);
+}
+
+.calculator-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.calc-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+}
+
+.calc-row .label {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.calc-row .value {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.calc-input {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    padding: 6px 10px;
+    border-radius: 6px;
+    color: white;
+    width: 90px;
+    text-align: right;
+    outline: none;
+    font-size: 13px;
+    font-weight: 600;
+    transition: border-color 0.2s;
+}
+
+.calc-input:focus {
+    border-color: var(--accent-color);
+}
+
+.calc-result-box {
+    background: rgba(240, 185, 11, 0.05);
+    border: 1px solid rgba(240, 185, 11, 0.15);
+    border-radius: 8px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    margin-top: 10px;
+}
+
+.result-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.result-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--accent-color);
+    text-shadow: 0 0 10px rgba(240, 185, 11, 0.3);
+    font-family: var(--font-heading);
+}
+
+.result-tip {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+/* Google 登入遮罩樣式 */
+.auth-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at 50% 50%, rgba(24, 26, 32, 0.98) 0%, rgba(11, 14, 17, 1) 100%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    backdrop-filter: blur(15px);
+    transition: opacity 0.5s ease;
+}
+
+.auth-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.auth-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(20px);
+    border-radius: 20px;
+    padding: 40px 20px; /* 手機上縮小左右 padding */
+    width: 90%; /* 手機自適應寬度 */
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    border-top: 2px solid rgba(240, 185, 11, 0.3);
+}
+
+.auth-logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.auth-logo h2 {
+    font-family: var(--font-heading);
+    font-size: 28px;
+    font-weight: 700;
+}
+
+.auth-logo .accent {
+    color: var(--accent-color);
+}
+
+.auth-subtitle {
+    font-size: 14px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-top: -10px;
+}
+
+.auth-description {
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.6;
+    margin: 10px 0;
+}
+
+.auth-divider {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    color: var(--text-muted);
+    font-size: 12px;
+    margin: 10px 0;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.auth-divider span {
+    padding: 0 15px;
+}
+
+.guest-btn {
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    color: var(--text-main);
+    padding: 12px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    width: 100%;
+    transition: all 0.2s;
+}
+
+.guest-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--accent-color);
+}
+
+/* Header 使用者個人資料樣式 */
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    padding: 6px 12px;
+    border-radius: 30px;
+}
+
+.user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--accent-color);
+    background: #333;
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.user-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.logout-btn {
+    background: transparent;
+    border: none;
+    color: var(--red);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.logout-btn:hover {
+    background: rgba(246, 70, 93, 0.1);
+}
+
+/* 訪客體驗限制次數顯示 */
+.user-limit {
+    font-size: 10px;
+    color: var(--accent-color);
+    background: rgba(240, 185, 11, 0.1);
+    border: 1px solid rgba(240, 185, 11, 0.2);
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-top: 2px;
+    font-weight: 600;
+    display: inline-block;
+    width: fit-content;
+}
+
+/* Google Client ID 設定面板樣式 */
+.client-id-config {
+    width: 100%;
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.config-link {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-decoration: underline;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.config-link:hover {
+    color: var(--accent-color);
+}
+
+.config-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 15px;
+    animation: slideDown 0.3s ease-out;
+}
+
+.config-panel.hidden {
+    display: none !important;
+}
+
+#client-id-input {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: white;
+    font-size: 12px;
+    outline: none;
+    width: 100%;
+}
+
+#client-id-input:focus {
+    border-color: var(--accent-color);
+}
+
+.primary-btn-sm {
+    background: var(--accent-color);
+    color: black;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+    width: 100%;
+}
+
+.primary-btn-sm:hover {
+    opacity: 0.9;
+}
+
+.config-tip {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    text-align: center;
+}
+
+.config-tip a {
+    color: var(--accent-color);
+    text-decoration: none;
+}
+
+.config-tip a:hover {
+    text-decoration: underline;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 歷史紀錄清除按鈕與狀態藥丸樣式 */
+.danger-btn-sm {
+    background: rgba(246, 70, 93, 0.1);
+    color: var(--red);
+    border: 1px solid var(--red);
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.danger-btn-sm:hover {
+    background: var(--red);
+    color: white;
+    box-shadow: 0 4px 12px rgba(246, 70, 93, 0.3);
+}
+
+.status-pill {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.status-pill.pending {
+    background: rgba(240, 185, 11, 0.1);
+    color: var(--accent-color);
+    border: 1px solid rgba(240, 185, 11, 0.25);
+}
+
+.status-pill.tp {
+    background: rgba(14, 203, 129, 0.1);
+    color: var(--green);
+    border: 1px solid rgba(14, 203, 129, 0.25);
+    box-shadow: 0 0 10px rgba(14, 203, 129, 0.15);
+}
+
+.status-pill.sl {
+    background: rgba(246, 70, 93, 0.1);
+    color: var(--red);
+    border: 1px solid rgba(246, 70, 93, 0.25);
+    box-shadow: 0 0 10px rgba(246, 70, 93, 0.15);
+}
+
+.status-pill.expired {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    border: 1px solid var(--glass-border);
+}
+
+/* 歷史紀錄篩選下拉選單樣式 */
+.premium-select {
+    background: rgba(30, 35, 41, 0.8);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    color: var(--text-main);
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.3s ease;
+    height: 38px;
+}
+
+.premium-select:hover, .premium-select:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 8px rgba(240, 185, 11, 0.2);
+}
+
+.premium-select option {
+    background: #181a20;
+    color: var(--text-main);
+}
+
+/* 微型危險/刪除按鈕樣式 (紅底白字) */
+.danger-btn-xs {
+    background: #f6465d;
+    color: #ffffff;
+    border: none;
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.danger-btn-xs:hover {
+    background: #d9384e;
+    box-shadow: 0 2px 6px rgba(246, 70, 93, 0.4);
+    transform: translateY(-1px);
+}
+
+/* 歷史紀錄累計模擬收益曲線圖樣式 */
+.history-chart-card {
+    background: rgba(255, 255, 255, 0.01);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.history-chart-card h2 {
+    font-family: var(--font-heading);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-main);
+    margin: 0;
+}
+
+.history-equity-chart-container {
+    width: 100%;
+    height: 260px;
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+}

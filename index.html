@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto SNR 分析儀 | 專業交易策略平台</title>
+    <link rel="stylesheet" href="index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;700&display=swap"
+        rel="stylesheet">
+    <!-- TradingView Lightweight Charts -->
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <!-- Google Identity Services (Google Sign-In) -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- EmailJS SDK (前端直接寄信) -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- 頂部導覽列 -->
+        <header class="main-header">
+            <div class="logo">
+                <span class="logo-icon">▲</span>
+                <h1>SNR <span class="accent">TRACER</span></h1>
+            </div>
+            <div class="market-info" id="market-info">
+                <div class="info-item">
+                    <span class="label">幣種</span>
+                    <span class="value" id="current-pair">BTC/USDT</span>
+                </div>
+                <div class="info-item hidden">
+                    <span class="label">當前價格</span>
+                    <span class="value highlight" id="current-price">Loading...</span>
+                </div>
+                <div class="info-item hidden">
+                    <span class="label">24h 變化</span>
+                    <span class="value" id="price-change">--</span>
+                </div>
+            </div>
+            <div class="user-profile hidden" id="user-profile">
+                <img src="" alt="Avatar" id="user-avatar" class="user-avatar">
+                <div class="user-details">
+                    <span class="user-name" id="user-name">--</span>
+                    <span class="user-limit hidden" id="user-limit">剩餘次數: 3次</span>
+                </div>
+                <button id="logout-btn" class="logout-btn">登出</button>
+            </div>
+            <div class="search-bar">
+                <input type="text" id="pair-input" placeholder="搜尋幣種 (如: ETHUSDT)...">
+                <button id="search-btn">分析</button>
+            </div>
+        </header>
+
+        <!-- 新增 Tab 導覽列 -->
+        <nav class="tabs-navigation">
+            <button class="tab-btn active" data-tab="single-coin-tab">單幣詳細分析</button>
+            <button class="tab-btn" data-tab="market-radar-tab">全市場雷達掃描</button>
+            <button class="tab-btn" data-tab="history-tab">歷史分析紀錄</button>
+            <button class="tab-btn" data-tab="equity-curve-tab">模擬收益曲線</button>
+        </nav>
+
+        <!-- Tab 1: 單幣詳細分析 -->
+        <div id="single-coin-tab" class="tab-content active">
+            <main class="dashboard">
+                <!-- 圖表區域 -->
+                <section class="chart-section card">
+                    <div class="card-header">
+                        <h2>實時行情與 SNR 水位</h2>
+                        <div class="chart-controls">
+                            <button class="interval-btn" data-interval="5m">5M</button>
+                            <button class="interval-btn" data-interval="15m">15M</button>
+                            <button class="interval-btn active" data-interval="1h">1H</button>
+                            <button class="interval-btn" data-interval="4h">4H</button>
+                            <button class="interval-btn" data-interval="1d">1D</button>
+                        </div>
+                    </div>
+                    <div id="tv-chart" class="chart-container"></div>
+                </section>
+
+                <!-- 分析與信號面板 -->
+                <aside class="analysis-section">
+                    <!-- 交易信號卡片 -->
+                    <div class="card signal-card" id="signal-card">
+                        <div class="card-header">
+                            <h2>交易信號</h2>
+                            <span class="status-badge" id="signal-type">觀察中</span>
+                        </div>
+                        <div class="signal-content">
+                            <div class="signal-row">
+                                <span class="label">建議進場點</span>
+                                <span class="value" id="entry-price">--</span>
+                            </div>
+                            <div class="signal-row">
+                                <span class="label">利潤目標 (TP)</span>
+                                <span class="value text-green" id="tp-price">--</span>
+                            </div>
+                            <div class="signal-row">
+                                <span class="label">止損點位 (SL)</span>
+                                <span class="value text-red" id="sl-price">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 策略原因卡片 -->
+                    <div class="card reason-card">
+                        <div class="card-header">
+                            <h2>策略分析原因</h2>
+                        </div>
+                        <div class="reason-content" id="analysis-reason">
+                            等待數據加載中，將依據支撐與壓力位、K 線形態及成交量進行綜合評估。
+                        </div>
+                    </div>
+
+                    <!-- 風險與槓桿計算器卡片 -->
+                    <div class="card calculator-card">
+                        <div class="card-header">
+                            <h2>風險與槓桿計算器</h2>
+                        </div>
+                        <div class="calculator-content">
+                            <div class="calc-row">
+                                <span class="label">系統推薦止損距離</span>
+                                <span class="value" id="calc-recommend-sl">--</span>
+                            </div>
+                            <div class="calc-row">
+                                <span class="label">自訂止損百分比 (%)</span>
+                                <input type="number" id="calc-custom-sl" class="calc-input" step="0.01" min="0.01" value="1.50" placeholder="輸入止損%">
+                            </div>
+                            <div class="calc-row">
+                                <span class="label">預期保證金虧損 (%)</span>
+                                <input type="number" id="calc-loss-ratio" class="calc-input" step="5" min="1" max="100" value="30" placeholder="輸入預期虧損%">
+                            </div>
+                            <div class="calc-result-box">
+                                <span class="result-label">建議槓桿倍數</span>
+                                <span class="result-value" id="calc-leverage-result">--</span>
+                                <span class="result-tip">建議槓桿 = 預期保證金虧損% / 止損%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 關鍵 SNR 位階列表 -->
+                    <div class="card levels-card">
+                        <div class="card-header">
+                            <h2>關鍵 SNR 位階</h2>
+                        </div>
+                        <ul class="levels-list" id="levels-list">
+                            <!-- 動態填充 -->
+                        </ul>
+                    </div>
+                </aside>
+            </main>
+        </div>
+
+        <!-- Tab 2: 全市場雷達掃描 -->
+        <div id="market-radar-tab" class="tab-content">
+            <!-- 自動定時掃描與信箱通知設定卡片 -->
+            <div class="card email-config-card" style="margin-bottom: 20px;">
+                <div class="email-config-header" onclick="app.toggleEmailConfig()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                    <h2 style="font-size: 16px; font-weight: 600; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px;">📬 自動定時掃描與信箱通知設定</h2>
+                    <span id="email-config-arrow" style="font-size: 12px; color: var(--text-muted); transition: transform 0.3s;">▼</span>
+                </div>
+                <div id="email-config-content" class="email-config-content hidden" style="margin-top: 15px;">
+                    <p class="config-tip" style="font-size: 12px; color: var(--text-muted); line-height: 1.5; text-align: left; margin: 0 0 15px 0;">
+                        網頁開啟時，系統預設每 20 分鐘在背景自動進行雷達掃描。若希望發現優質交易機會時收到信箱通知，請至 <a href="https://www.emailjs.com/" target="_blank" style="color: var(--accent-color); text-decoration: underline;">EmailJS 官網</a> 註冊免費帳戶並綁定 Gmail，然後配置下方參數：
+                    </p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; width: 100%;">
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">收信電子信箱</label>
+                            <input type="email" id="email-target" placeholder="例如: your_email@gmail.com" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">EmailJS Service ID</label>
+                            <input type="text" id="emailjs-service-id" placeholder="例如: service_xxxxxx" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">EmailJS Template ID</label>
+                            <input type="text" id="emailjs-template-id" placeholder="例如: template_xxxxxx" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">EmailJS Public Key</label>
+                            <input type="text" id="emailjs-public-key" placeholder="貼上您的 Public Key (公鑰)" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button id="save-email-config-btn" class="primary-btn-sm" style="width: auto; padding: 8px 20px;">儲存信箱設定</button>
+                        <button id="test-email-btn" class="danger-btn-sm" style="padding: 8px 20px; font-size: 12px; height: auto;">測試發送郵件</button>
+                    </div>
+                </div>
+            </div>
+            <div class="card scanner-dashboard">
+                <div class="scanner-header">
+                    <div class="scanner-header-text">
+                        <h2>全市場 SNR 雷達掃描儀</h2>
+                        <p class="subtitle">自動監控幣安 24h 交易量前 50 大的 USDT 交易對，精準篩選出符合 SNR 策略且盈虧比 > 1.0 的即時交易機會。</p>
+                    </div>
+                    <div class="scanner-controls">
+                        <div class="radar-interval-controls">
+                            <button class="radar-interval-btn" data-interval="5m">5M</button>
+                            <button class="radar-interval-btn" data-interval="15m">15M</button>
+                            <button class="radar-interval-btn active" data-interval="1h">1H</button>
+                            <button class="radar-interval-btn" data-interval="4h">4H</button>
+                            <button class="radar-interval-btn" data-interval="1d">1D</button>
+                        </div>
+                        <button id="rescan-btn" class="primary-btn">立即開始掃描</button>
+                    </div>
+                </div>
+                
+                <div class="scanner-stats">
+                    <div class="stat-card">
+                        <span class="stat-label">掃描對象</span>
+                        <span class="stat-value">成交量前 50 大</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">掃描週期</span>
+                        <span class="stat-value highlight" id="radar-stat-interval">1H</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">當前推薦機會</span>
+                        <span class="stat-value highlight" id="radar-count">0 標的</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">目前雷達狀態</span>
+                        <span class="stat-value" id="radar-status">等待掃描</span>
+                    </div>
+                </div>
+
+                <div class="radar-table-container">
+                    <table class="premium-radar-table">
+                        <thead>
+                            <tr>
+                                <th>交易對</th>
+                                <th>建議信號</th>
+                                <th>盈虧比 (Risk-Reward)</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="radar-list">
+                            <tr>
+                                <td colspan="4" style="text-align:center; padding: 30px; color: var(--text-muted);">
+                                    尚未進行掃描，請點擊上方「立即開始掃描」按鈕。
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 3: 歷史分析紀錄 -->
+        <div id="history-tab" class="tab-content">
+            <div class="card scanner-dashboard">
+                <div class="scanner-header">
+                    <div class="scanner-header-text">
+                        <h2>個人歷史分析紀錄</h2>
+                        <p class="subtitle">自動記錄您每一次分析的有效信號，並實時監控其隨後是否觸及止盈或止損，統計策略的實際勝率。（最多保留最近 100 筆）</p>
+                    </div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                        <select id="history-filter-direction" class="premium-select">
+                            <option value="ALL">全部方向</option>
+                            <option value="LONG">買入 (LONG)</option>
+                            <option value="SHORT">賣出 (SHORT)</option>
+                        </select>
+                        <select id="history-filter-interval" class="premium-select">
+                            <option value="ALL">全部週期</option>
+                            <option value="5m">5M</option>
+                            <option value="15m">15M</option>
+                            <option value="1h">1H</option>
+                            <option value="4h">4H</option>
+                            <option value="1d">1D</option>
+                        </select>
+                        <button id="refresh-prices-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px;">更新價格</button>
+                        <button id="clear-history-btn" class="danger-btn-sm">清除所有歷史紀錄</button>
+                    </div>
+                </div>
+                
+                <div class="scanner-stats">
+                    <div class="stat-card">
+                        <span class="stat-label">總分析信號</span>
+                        <span class="stat-value" id="history-stat-total">0 筆</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">已結算交易</span>
+                        <span class="stat-value highlight" id="history-stat-settled">0 筆</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">策略實際勝率</span>
+                        <span class="stat-value highlight" id="history-stat-winrate">--</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">已止盈 / 已止損</span>
+                        <span class="stat-value" id="history-stat-ratio" style="color: var(--text-main);">0 / 0</span>
+                    </div>
+                </div>
+
+                <div class="radar-table-container">
+                    <table class="premium-radar-table">
+                        <thead>
+                            <tr>
+                                <th>時間</th>
+                                <th>幣種 / 週期</th>
+                                <th>方向</th>
+                                <th>進場 / TP / SL</th>
+                                <th>盈虧比 (R:R)</th>
+                                <th>目前狀態</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-list">
+                            <tr>
+                                <td colspan="7" style="text-align:center; padding: 40px; color: var(--text-muted);">
+                                    暫無歷史分析紀錄。請在單幣詳細分析中搜尋並產生有效交易信號。
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 4: 模擬收益曲線 -->
+        <div id="equity-curve-tab" class="tab-content">
+            <div class="card scanner-dashboard">
+                <div class="scanner-header">
+                    <div class="scanner-header-text">
+                        <h2>累計模擬收益曲線 (PnL Equity Curve)</h2>
+                        <p class="subtitle">根據您已結算的歷史分析信號，可視化展示策略的累計模擬 PnL 收益走勢（TP 贏得 R:R 值，SL 輸掉 1R）。</p>
+                    </div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                        <select id="equity-filter-direction" class="premium-select">
+                            <option value="ALL">全部方向</option>
+                            <option value="LONG">買入 (LONG)</option>
+                            <option value="SHORT">賣出 (SHORT)</option>
+                        </select>
+                        <select id="equity-filter-interval" class="premium-select">
+                            <option value="ALL">全部週期</option>
+                            <option value="5m">5M</option>
+                            <option value="15m">15M</option>
+                            <option value="1h">1H</option>
+                            <option value="4h">4H</option>
+                            <option value="1d">1D</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="scanner-stats" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
+                    <div class="stat-card">
+                        <span class="stat-label">當前累計總收益</span>
+                        <span class="stat-value highlight" id="equity-stat-total-pnl">0.00 R</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">已實現交易總數</span>
+                        <span class="stat-value" id="equity-stat-count" style="color: var(--text-main);">0 筆</span>
+                    </div>
+                </div>
+
+                <div class="history-chart-card" style="margin-top: 0; border: none; background: transparent; padding: 0;">
+                    <div id="history-equity-chart" class="history-equity-chart-container" style="height: 380px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="main-footer">
+            <p>&copy; 2026 SNR TRACER - 僅供教育與參考用途，投資加密貨幣具備高度風險。</p>
+        </footer>
+    </div>
+
+    <!-- 載入動畫遮罩 -->
+    <div id="loader" class="loader-overlay">
+        <div class="spinner"></div>
+        <p>正從幣安掃描市場數據...</p>
+    </div>
+
+    <!-- Google 登入驗證遮罩 -->
+    <div id="auth-overlay" class="auth-overlay">
+        <div class="auth-card">
+            <div class="auth-logo">
+                <span class="logo-icon">▲</span>
+                <h2>SNR <span class="accent">TRACER</span></h2>
+            </div>
+            <p class="auth-subtitle">專業加密貨幣 SNR 策略分析平台</p>
+            <p class="auth-description">請登入您的 Google 帳戶以啟動實時行情與市場雷達分析服務。</p>
+            
+            <!-- Google 登入按鈕容器 -->
+            <div id="google-signin-btn"></div>
+            
+            <div class="auth-divider">
+                <span>或</span>
+            </div>
+            
+            <!-- 訪客登入按鈕 -->
+            <button id="guest-login-btn" class="guest-btn">使用訪客模式體驗</button>
+            
+            <!-- 設定 Google Client ID -->
+            <div class="client-id-config">
+                <a href="#" id="toggle-config-btn" class="config-link">設定自訂 Google Client ID</a>
+                <div id="config-panel" class="config-panel hidden">
+                    <input type="text" id="client-id-input" placeholder="貼上您的 Client ID (例如 96537651...)">
+                    <button id="save-client-id-btn" class="primary-btn-sm">儲存並重新載入</button>
+                    <p class="config-tip">請前往 <a href="https://console.cloud.google.com/" target="_blank">Google Cloud</a> 建立憑證，並於來源中加入授權：<code>http://localhost:8000</code></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK (v8 Compatibility Mode) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="index.js"></script>
+</body>
+
+</html>

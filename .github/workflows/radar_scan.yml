@@ -1,0 +1,26 @@
+name: SNR Market Radar Auto Scanner
+
+on:
+  schedule:
+    # 預設每 20 分鐘在背景執行一次雷達掃描
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
+    # 支援在 GitHub 控制台手動點擊「Run workflow」立即執行
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Run SNR Cloud Radar Scan
+      run: node radar_scan.js
+      env:
+        USER_EMAIL: ${{ secrets.USER_EMAIL }}
