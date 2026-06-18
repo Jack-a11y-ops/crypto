@@ -1425,16 +1425,42 @@ class SNRTracer {
         }
 
         const total = filteredHistory.length;
-        const settled = filteredHistory.filter(r => r.status === 'TP' || r.status === 'SL');
-        const tpCount = filteredHistory.filter(r => r.status === 'TP').length;
-        const slCount = filteredHistory.filter(r => r.status === 'SL').length;
+        const settled = filteredHistory.filter(r => r.status === 'TP' || r.status === 'SL' || r.status === 'CLOSED');
         
-        const winRate = settled.length > 0 ? `${((tpCount / settled.length) * 100).toFixed(1)}%` : '--';
+        let winCount = 0;
+        let lossCount = 0;
+        
+        settled.forEach(r => {
+            if (r.status === 'TP') {
+                winCount++;
+            } else if (r.status === 'SL') {
+                lossCount++;
+            } else if (r.status === 'CLOSED') {
+                if (r.closePrice !== undefined && r.closePrice !== null) {
+                    const risk = Math.abs(r.entry - r.sl);
+                    let pnlChange = 0.0;
+                    if (risk > 0) {
+                        pnlChange = r.type === 'LONG' 
+                            ? (r.closePrice - r.entry) / risk 
+                            : (r.entry - r.closePrice) / risk;
+                    }
+                    if (pnlChange > 0) {
+                        winCount++;
+                    } else {
+                        lossCount++;
+                    }
+                } else {
+                    lossCount++;
+                }
+            }
+        });
+        
+        const winRate = settled.length > 0 ? `${((winCount / settled.length) * 100).toFixed(1)}%` : '--';
 
         document.getElementById('history-stat-total').innerText = `${total} 筆`;
         document.getElementById('history-stat-settled').innerText = `${settled.length} 筆`;
         document.getElementById('history-stat-winrate').innerText = winRate;
-        document.getElementById('history-stat-ratio').innerText = `${tpCount} / ${slCount}`;
+        document.getElementById('history-stat-ratio').innerText = `${winCount} / ${lossCount}`;
 
         const historyList = document.getElementById('history-list');
         if (!historyList) return;
