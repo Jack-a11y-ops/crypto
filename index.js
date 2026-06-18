@@ -394,6 +394,25 @@ class SNRTracer {
             });
         }
 
+        // 模擬收益頁面更新即時狀況按鈕監聽
+        const refreshEquityBtn = document.getElementById('refresh-equity-btn');
+        if (refreshEquityBtn) {
+            refreshEquityBtn.addEventListener('click', async () => {
+                refreshEquityBtn.innerText = '正在更新...';
+                refreshEquityBtn.disabled = true;
+                try {
+                    await this.checkHistorySettlement();
+                    this.updateEquityCurveTab();
+                    this.updatePaperAccountUI();
+                } catch (e) {
+                    console.error(e);
+                } finally {
+                    refreshEquityBtn.innerText = '更新即時狀況';
+                    refreshEquityBtn.disabled = false;
+                }
+            });
+        }
+
         // 儲存信箱設定按鈕監聽
         const saveEmailConfigBtn = document.getElementById('save-email-config-btn');
         if (saveEmailConfigBtn) {
