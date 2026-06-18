@@ -1674,14 +1674,33 @@ class SNRTracer {
         }
         
         // 12 像素之內點擊視為選中對應線進行拖曳
+        let shouldFreeze = false;
         if (tpY !== null && Math.abs(mouseY - tpY) < 12) {
             this.isDraggingTP = true;
             chartContainer.style.cursor = 'ns-resize';
+            shouldFreeze = true;
             e.preventDefault(); // 防止選中文字
         } else if (slY !== null && Math.abs(mouseY - slY) < 12) {
             this.isDraggingSL = true;
             chartContainer.style.cursor = 'ns-resize';
+            shouldFreeze = true;
             e.preventDefault(); // 防止選中文字
+        }
+
+        // 暫時禁用圖表滾動與平移，防止拖曳價格線時 K 線圖位移晃動
+        if (shouldFreeze && this.modalChart) {
+            this.modalChart.applyOptions({
+                handleScroll: {
+                    mouseWheel: false,
+                    pressedMouseButton: false,
+                    touchGesture: false,
+                },
+                handleScale: {
+                    axisPressedMouseMove: false,
+                    mouseWheel: false,
+                    pinch: false,
+                }
+            });
         }
     }
 
@@ -1777,6 +1796,22 @@ class SNRTracer {
         
         this.isDraggingTP = false;
         this.isDraggingSL = false;
+
+        // 重新啟用圖表滾動與平移
+        if (this.modalChart) {
+            this.modalChart.applyOptions({
+                handleScroll: {
+                    mouseWheel: true,
+                    pressedMouseButton: true,
+                    touchGesture: true,
+                },
+                handleScale: {
+                    axisPressedMouseMove: true,
+                    mouseWheel: true,
+                    pinch: true,
+                }
+            });
+        }
         
         const chartContainer = document.getElementById('modal-tv-chart');
         if (chartContainer) {
