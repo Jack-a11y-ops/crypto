@@ -23,6 +23,9 @@ class SNRTracer {
         this.modalChart = null; // 歷史複盤 Modal 圖表實例
         this.modalCandlestickSeries = null;
         this.modalPriceLines = [];
+        this.tpPriceLine = null; // 儲存 Modal 的 TP 價格線實例
+        this.currentDragRecord = null; // 儲存當前點選的歷史紀錄資料
+        this.isDraggingTP = false; // 是否正在拖曳 TP 線
 
         this.init();
     }
@@ -418,6 +421,14 @@ class SNRTracer {
                 this.closeHistoryChartModal();
             }
         });
+
+        // 綁定 K 線圖拖曳止盈線相關事件
+        const modalChartContainer = document.getElementById('modal-tv-chart');
+        if (modalChartContainer) {
+            modalChartContainer.addEventListener('mousedown', (e) => this.handleChartMouseDown(e));
+            modalChartContainer.addEventListener('mousemove', (e) => this.handleChartMouseMove(e));
+            window.addEventListener('mouseup', (e) => this.handleChartMouseUp(e));
+        }
     }
 
     // 切換 Tab 輔助函式
@@ -1449,6 +1460,8 @@ class SNRTracer {
         const record = history.find(r => r.id === id);
         if (!record) return;
 
+        this.currentDragRecord = record; // 保存給拖曳功能使用
+
         // 1. 填入基本資訊與顯示 Modal
         document.getElementById('modal-title').innerText = `${record.symbol.replace('USDT', '')}/USDT (${record.interval.toUpperCase()}) 歷史回顧`;
         
@@ -1576,6 +1589,7 @@ class SNRTracer {
                     title: `🎯 止盈位 $${this.formatPrice(record.tp)}`,
                 });
                 this.modalPriceLines.push(tpLine);
+                this.tpPriceLine = tpLine; // 保存給拖曳功能使用
 
                 // 4.3 止損防守 (紅實線)
                 const slLine = this.modalCandlestickSeries.createPriceLine({
@@ -1622,8 +1636,144 @@ class SNRTracer {
             this.modalChart = null;
             this.modalCandlestickSeries = null;
             this.modalPriceLines = [];
+            this.tpPriceLine = null;
+            this.currentDragRecord = null;
+            this.isDraggingTP = false;
         }
-        document.getElementById('modal-tv-chart').innerHTML = '';
+        const chartContainer = document.getElementById('modal-tv-chart');
+        if (chartContainer) {
+            chartContainer.style.cursor = 'default';
+        }
+        chartContainer.innerHTML = '';
+    }
+
+    handleChartMouseDown(e) {
+        if (!this.modalChart || !this.modalCandlestickSeries || !this.currentDragRecord || !this.tpPriceLine) return;
+        
+        const chartContainer = document.getElementById('modal-tv-chart');
+        const rect = chartContainer.getBoundingClientRect();
+        const mouseY = e.clientY - rect.top;
+        
+        // 計算 TP 線當前的 Y 座標
+        const tpY = this.modalCandlestickSeries.priceToCoordinate(this.currentDragRecord.tp);
+        if (tpY === null) return;
+        
+        // 12 像素之內點擊視為選中 TP 線進行拖曳
+        if (Math.abs(mouseY - tpY) < 12) {
+            this.isDraggingTP = true;
+            chartContainer.style.cursor = 'ns-resize';
+            e.preventDefault(); // 防止選中文字
+        }
+    }
+
+    handleChartMouseMove(e) {
+        if (!this.modalChart || !this.modalCandlestickSeries || !this.currentDragRecord || !this.tpPriceLine) return;
+        
+        const chartContainer = document.getElementById('modal-tv-chart');
+        const rect = chartContainer.getBoundingClientRect();
+        const mouseY = e.clientY - rect.top;
+        
+        // 計算 TP 線當前的 Y 座標
+        const tpY = this.modalCandlestickSeries.priceToCoordinate(this.currentDragRecord.tp);
+        
+        if (this.isDraggingTP) {
+            // 進行拖曳
+            chartContainer.style.cursor = 'ns-resize';
+            const price = this.modalCandlestickSeries.coordinateToPrice(mouseY);
+            if (price !== null && price > 0) {
+                // 限制價格：例如 LONG 的 TP 必須高於進場價；SHORT 的 TP 必須低於進場價
+                let validPrice = price;
+                const record = this.currentDragRecord;
+                
+                if (record.type === 'LONG') {
+                    // LONG: TP 不能低於進場價 + 0.1% 緩衝
+                    const minTP = record.entry * 1.001;
+                    if (validPrice < minTP) validPrice = minTP;
+                } else {
+                    // SHORT: TP 不能高於進場價 - 0.1% 緩衝
+                    const maxTP = record.entry * 0.999;
+                    if (validPrice > maxTP) validPrice = maxTP;
+                }
+                
+                // 保留適當精度
+                const precisionPrice = parseFloat(validPrice.toFixed(8));
+                this.currentDragRecord.tp = precisionPrice;
+                
+                // 動態更新線條位置與 Title
+                this.tpPriceLine.applyOptions({
+                    price: precisionPrice,
+                    title: `🎯 止盈位 (拖曳中) $${this.formatPrice(precisionPrice)}`
+                });
+                
+                // 同步更新 Modal 頂部數值顯示
+                const modalTpEl = document.getElementById('modal-tp');
+                if (modalTpEl) {
+                    modalTpEl.innerText = `$${this.formatPrice(precisionPrice)}`;
+                }
+            }
+        } else {
+            // 尚未拖曳，滑鼠滑過時如果是靠近 TP 線則顯示拖曳 cursor
+            if (tpY !== null && Math.abs(mouseY - tpY) < 12) {
+                chartContainer.style.cursor = 'ns-resize';
+            } else {
+                chartContainer.style.cursor = 'default';
+            }
+        }
+    }
+
+    async handleChartMouseUp(e) {
+        if (!this.isDraggingTP || !this.currentDragRecord || !this.tpPriceLine) {
+            this.isDraggingTP = false;
+            return;
+        }
+        
+        this.isDraggingTP = false;
+        const chartContainer = document.getElementById('modal-tv-chart');
+        if (chartContainer) {
+            chartContainer.style.cursor = 'default';
+        }
+        
+        const record = this.currentDragRecord;
+        const newTP = record.tp;
+        
+        // 恢復價格線的最終標題
+        this.tpPriceLine.applyOptions({
+            title: `🎯 止盈位 $${this.formatPrice(newTP)}`
+        });
+        
+        // 1. 重新計算該筆紀錄的盈虧比 (R:R)
+        // 盈虧比 = |tp - entry| / |entry - sl|
+        const risk = Math.abs(record.entry - record.sl);
+        if (risk > 0) {
+            record.rr = Math.abs(newTP - record.entry) / risk;
+        }
+        
+        // 2. 更新 LocalStorage
+        const email = this.currentUser.email;
+        const historyKey = `snr_history_${email}`;
+        try {
+            let history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+            const index = history.findIndex(r => r.id === record.id);
+            if (index !== -1) {
+                history[index].tp = newTP;
+                history[index].rr = record.rr;
+                localStorage.setItem(historyKey, JSON.stringify(history));
+                
+                // 3. 同步到 Firebase Realtime Database
+                if (this.db) {
+                    const safeEmail = email.replace(/\./g, '_');
+                    await this.db.ref(`users/${safeEmail}/history`).set(history);
+                }
+            }
+        } catch (err) {
+            console.error("Save dragged TP error:", err);
+        }
+        
+        // 4. 重新刷新歷史表格 (不需發送網路請求)
+        this.renderHistory(false);
+        
+        // 5. 重新整理模擬收益曲線，因 R:R 可能已變更
+        this.updateEquityCurveTab();
     }
 
     updateEquityCurveTab() {
