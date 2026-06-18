@@ -1461,131 +1461,147 @@ class SNRTracer {
 
         // 2. 初始化 K 線圖表
         const chartContainer = document.getElementById('modal-tv-chart');
-        chartContainer.innerHTML = ''; // 清空容器
+        chartContainer.innerHTML = '<div style="text-align:center; padding: 120px 0; color: var(--text-muted); font-size: 14px;">K 線圖表載入中...</div>';
 
-        this.modalChart = LightweightCharts.createChart(chartContainer, {
-            layout: {
-                background: { color: 'transparent' },
-                textColor: '#848e9c',
-                fontSize: 12,
-                fontFamily: 'Inter',
-            },
-            grid: {
-                vertLines: { color: 'rgba(197, 203, 206, 0.05)' },
-                horzLines: { color: 'rgba(197, 203, 206, 0.05)' },
-            },
-            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            rightPriceScale: { borderColor: 'rgba(197, 203, 206, 0.1)' },
-            timeScale: {
-                borderColor: 'rgba(197, 203, 206, 0.1)',
-                timeVisible: true
-            },
-        });
-
-        this.modalCandlestickSeries = this.modalChart.addSeries(LightweightCharts.CandlestickSeries, {
-            upColor: '#0ecb81',
-            downColor: '#f6465d',
-            borderVisible: false,
-            wickUpColor: '#0ecb81',
-            wickDownColor: '#f6465d',
-            priceFormat: {
-                type: 'price',
-                precision: 8,
-                minMove: 0.00000001,
+        // 銷毀可能殘留的舊圖表實例
+        if (this.modalChart) {
+            try {
+                this.modalChart.remove();
+            } catch (e) {
+                console.warn("Destroy old modal chart error:", e);
             }
-        });
-
-        // 自適應調整尺寸
-        this.modalChart.applyOptions({
-            width: chartContainer.clientWidth,
-            height: chartContainer.clientHeight
-        });
-
-        // 3. 獲取當時 K 線資料
-        // 計算 interval 對應的毫秒數，往前退 30 根 K 線作為查詢起點
-        let intervalMs = 60 * 1000;
-        if (record.interval === '5m') intervalMs = 5 * 60 * 1000;
-        else if (record.interval === '15m') intervalMs = 15 * 60 * 1000;
-        else if (record.interval === '1h') intervalMs = 60 * 60 * 1000;
-        else if (record.interval === '4h') intervalMs = 4 * 60 * 60 * 1000;
-        else if (record.interval === '1d') intervalMs = 24 * 60 * 60 * 1000;
-
-        const queryStartTime = record.id - 30 * intervalMs;
-
-        try {
-            const url = `https://api.binance.com/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=150`;
-            const response = await fetch(url);
-            const klines = await response.json();
-
-            if (!Array.isArray(klines) || klines.length === 0) {
-                chartContainer.innerHTML = '<div style="text-align:center; padding: 100px; color: var(--text-muted);">無法載入 K 線資料</div>';
-                return;
-            }
-
-            const chartData = klines.map(d => ({
-                time: d[0] / 1000,
-                open: parseFloat(d[1]),
-                high: parseFloat(d[2]),
-                low: parseFloat(d[3]),
-                close: parseFloat(d[4])
-            }));
-
-            this.modalCandlestickSeries.setData(chartData);
-
-            const lastPrice = chartData[chartData.length - 1].close;
-            document.getElementById('modal-current').innerText = `$${this.formatPrice(lastPrice)}`;
-
-            // 4. 繪製輔助價格線 (Entry, TP, SL, CurrentPrice)
+            this.modalChart = null;
+            this.modalCandlestickSeries = null;
             this.modalPriceLines = [];
-
-            // 4.1 進場價 (藍虛線)
-            const entryLine = this.modalCandlestickSeries.createPriceLine({
-                price: record.entry,
-                color: 'rgba(56, 139, 253, 0.85)',
-                lineWidth: 2,
-                lineStyle: LightweightCharts.LineStyle.Dashed,
-                axisLabelVisible: true,
-                title: `進場價 $${this.formatPrice(record.entry)}`,
-            });
-            this.modalPriceLines.push(entryLine);
-
-            // 4.2 止盈目標 (綠實線)
-            const tpLine = this.modalCandlestickSeries.createPriceLine({
-                price: record.tp,
-                color: 'rgba(14, 203, 129, 0.85)',
-                lineWidth: 2,
-                lineStyle: LightweightCharts.LineStyle.Solid,
-                axisLabelVisible: true,
-                title: `🎯 止盈位 $${this.formatPrice(record.tp)}`,
-            });
-            this.modalPriceLines.push(tpLine);
-
-            // 4.3 止損防守 (紅實線)
-            const slLine = this.modalCandlestickSeries.createPriceLine({
-                price: record.sl,
-                color: 'rgba(246, 70, 93, 0.85)',
-                lineWidth: 2,
-                lineStyle: LightweightCharts.LineStyle.Solid,
-                axisLabelVisible: true,
-                title: `❌ 止損位 $${this.formatPrice(record.sl)}`,
-            });
-            this.modalPriceLines.push(slLine);
-
-            // 4.4 最新現價 (黃實線)
-            const currentLine = this.modalCandlestickSeries.createPriceLine({
-                price: lastPrice,
-                color: 'rgba(240, 185, 11, 0.85)',
-                lineWidth: 2,
-                lineStyle: LightweightCharts.LineStyle.Solid,
-                axisLabelVisible: true,
-                title: `現價 $${this.formatPrice(lastPrice)}`,
-            });
-            this.modalPriceLines.push(currentLine);
-
-        } catch (err) {
-            console.error("Load modal chart klines error:", err);
-            chartContainer.innerHTML = '<div style="text-align:center; padding: 100px; color: var(--red);">載入市場數據失敗，請檢查網路連接。</div>';
         }
+
+        // 使用 setTimeout 確保 Modal 已經被渲染並取得正確的 clientWidth/clientHeight
+        setTimeout(async () => {
+            chartContainer.innerHTML = ''; // 清空載入中提示
+
+            const width = chartContainer.clientWidth || 800;
+            const height = chartContainer.clientHeight || 450;
+
+            try {
+                this.modalChart = LightweightCharts.createChart(chartContainer, {
+                    width: width,
+                    height: height,
+                    layout: {
+                        background: { color: 'transparent' },
+                        textColor: '#848e9c',
+                        fontSize: 12,
+                        fontFamily: 'Inter',
+                    },
+                    grid: {
+                        vertLines: { color: 'rgba(197, 203, 206, 0.05)' },
+                        horzLines: { color: 'rgba(197, 203, 206, 0.05)' },
+                    },
+                    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                    rightPriceScale: { borderColor: 'rgba(197, 203, 206, 0.1)' },
+                    timeScale: {
+                        borderColor: 'rgba(197, 203, 206, 0.1)',
+                        timeVisible: true
+                    },
+                });
+
+                this.modalCandlestickSeries = this.modalChart.addSeries(LightweightCharts.CandlestickSeries, {
+                    upColor: '#0ecb81',
+                    downColor: '#f6465d',
+                    borderVisible: false,
+                    wickUpColor: '#0ecb81',
+                    wickDownColor: '#f6465d',
+                    priceFormat: {
+                        type: 'price',
+                        precision: 8,
+                        minMove: 0.00000001,
+                    }
+                });
+
+                // 3. 獲取當時 K 線資料
+                // 計算 interval 對應的毫秒數，往前退 30 根 K 線作為查詢起點
+                let intervalMs = 60 * 1000;
+                if (record.interval === '5m') intervalMs = 5 * 60 * 1000;
+                else if (record.interval === '15m') intervalMs = 15 * 60 * 1000;
+                else if (record.interval === '1h') intervalMs = 60 * 60 * 1000;
+                else if (record.interval === '4h') intervalMs = 4 * 60 * 60 * 1000;
+                else if (record.interval === '1d') intervalMs = 24 * 60 * 60 * 1000;
+
+                const queryStartTime = record.id - 30 * intervalMs;
+
+                const url = `https://api.binance.com/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=150`;
+                const response = await fetch(url);
+                const klines = await response.json();
+
+                if (!Array.isArray(klines) || klines.length === 0) {
+                    chartContainer.innerHTML = '<div style="text-align:center; padding: 120px 0; color: var(--text-muted);">無法載入 K 線資料</div>';
+                    return;
+                }
+
+                const chartData = klines.map(d => ({
+                    time: d[0] / 1000,
+                    open: parseFloat(d[1]),
+                    high: parseFloat(d[2]),
+                    low: parseFloat(d[3]),
+                    close: parseFloat(d[4])
+                }));
+
+                this.modalCandlestickSeries.setData(chartData);
+
+                const lastPrice = chartData[chartData.length - 1].close;
+                document.getElementById('modal-current').innerText = `$${this.formatPrice(lastPrice)}`;
+
+                // 4. 繪製輔助價格線 (Entry, TP, SL, CurrentPrice)
+                this.modalPriceLines = [];
+
+                // 4.1 進場價 (藍虛線)
+                const entryLine = this.modalCandlestickSeries.createPriceLine({
+                    price: record.entry,
+                    color: 'rgba(56, 139, 253, 0.85)',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                    axisLabelVisible: true,
+                    title: `進場價 $${this.formatPrice(record.entry)}`,
+                });
+                this.modalPriceLines.push(entryLine);
+
+                // 4.2 止盈目標 (綠實線)
+                const tpLine = this.modalCandlestickSeries.createPriceLine({
+                    price: record.tp,
+                    color: 'rgba(14, 203, 129, 0.85)',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    axisLabelVisible: true,
+                    title: `🎯 止盈位 $${this.formatPrice(record.tp)}`,
+                });
+                this.modalPriceLines.push(tpLine);
+
+                // 4.3 止損防守 (紅實線)
+                const slLine = this.modalCandlestickSeries.createPriceLine({
+                    price: record.sl,
+                    color: 'rgba(246, 70, 93, 0.85)',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    axisLabelVisible: true,
+                    title: `❌ 止損位 $${this.formatPrice(record.sl)}`,
+                });
+                this.modalPriceLines.push(slLine);
+
+                // 4.4 最新現價 (黃實線)
+                const currentLine = this.modalCandlestickSeries.createPriceLine({
+                    price: lastPrice,
+                    color: 'rgba(240, 185, 11, 0.85)',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    axisLabelVisible: true,
+                    title: `現價 $${this.formatPrice(lastPrice)}`,
+                });
+                this.modalPriceLines.push(currentLine);
+
+            } catch (err) {
+                console.error("Load modal chart klines error:", err);
+                chartContainer.innerHTML = '<div style="text-align:center; padding: 120px 0; color: var(--red);">載入市場數據失敗，請檢查網路連接。</div>';
+            }
+        }, 100);
     }
 
     closeHistoryChartModal() {
@@ -1597,15 +1613,15 @@ class SNRTracer {
         // 銷毀圖表實例釋放記憶體
         if (this.modalChart) {
             try {
-                this.modalChart.removeSeries(this.modalCandlestickSeries);
-                this.modalChart = null;
-                this.modalCandlestickSeries = null;
-                this.modalPriceLines = [];
+                this.modalChart.remove();
             } catch (e) {
                 console.warn("Destroy modal chart error:", e);
             }
-            document.getElementById('modal-tv-chart').innerHTML = '';
+            this.modalChart = null;
+            this.modalCandlestickSeries = null;
+            this.modalPriceLines = [];
         }
+        document.getElementById('modal-tv-chart').innerHTML = '';
     }
 
     updateEquityCurveTab() {
