@@ -139,6 +139,23 @@ function analyzeSNR(data) {
         }
     }
 
+    // 確保止盈方向正確且盈虧比為正值，防範支撐壓力重疊造成的異常信號
+    if (signal === 'LONG') {
+        if (tp <= lastPrice || rr <= 0) {
+            signal = 'WATCH';
+            rr = 0;
+            sl = 0;
+            tp = 0;
+        }
+    } else if (signal === 'SHORT') {
+        if (tp >= lastPrice || rr <= 0) {
+            signal = 'WATCH';
+            rr = 0;
+            sl = 0;
+            tp = 0;
+        }
+    }
+
     // 趨勢過濾 (EMA-based)
     if (signal === 'LONG') {
         // 如果是空頭趨勢 (價格低於 EMA 且 EMA 下降)，過濾 LONG 訊號
