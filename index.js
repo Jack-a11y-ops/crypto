@@ -2266,7 +2266,7 @@ class SNRTracer {
                 const analysis = this.analyzeSNR(historicalWindow);
 
                 if (activeTrade) {
-                    if (analysis.signal !== 'WATCH') {
+                    if (analysis.signal !== 'WATCH' && analysis.rr > 1.0) {
                         if (analysis.winRate > activeTrade.winRate) {
                             const closePrice = currentK.close;
                             const risk = Math.abs(activeTrade.entry - activeTrade.sl);
@@ -2348,7 +2348,7 @@ class SNRTracer {
                         }
                     }
                 } else {
-                    if (analysis.signal === 'LONG' || analysis.signal === 'SHORT') {
+                    if ((analysis.signal === 'LONG' || analysis.signal === 'SHORT') && analysis.rr > 1.0) {
                         activeTrade = {
                             symbol: symbol,
                             direction: analysis.signal,
