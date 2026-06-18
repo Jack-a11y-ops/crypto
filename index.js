@@ -464,6 +464,10 @@ class SNRTracer {
         
         // 切換回單幣詳細分析時，重新調整 TradingView 圖表大小以填滿容器
         if (tabId === 'single-coin-tab') {
+            // 如果從未加載過數據，則在初次切換時主動進行分析載入
+            if (this.klines.length === 0) {
+                this.fetchAndAnalyze(true);
+            }
             setTimeout(() => {
                 const chartElement = document.getElementById('tv-chart');
                 if (this.chart && chartElement) {
@@ -725,13 +729,15 @@ class SNRTracer {
             this.startAutoRadarScan();
         }
         
-        // 登入成功後再行載入主圖表與分析 (標記為初始化載入，不記入歷史)
-        this.fetchAndAnalyze(true);
-
         // 登入成功後，主動依據當前 active tab 做切換與初始化渲染 (確保首頁預設為歷史紀錄時能自動加載數據)
         const activeTab = document.querySelector('.tab-btn.active');
         const activeTabId = activeTab ? activeTab.dataset.tab : 'history-tab';
         this.switchTab(activeTabId);
+
+        // 只有在當前預設 active tab 為單幣詳細分析時，才在初始化時加載分析主圖表 (避免預設載入歷史紀錄時產生不必要的 API 請求與計算)
+        if (activeTabId === 'single-coin-tab') {
+            this.fetchAndAnalyze(true);
+        }
     }
 
     async fetchAndAnalyze(isInitial = false) {
