@@ -578,6 +578,7 @@ class SNRTracer {
             if (marketInfoEl) marketInfoEl.classList.add('hidden');
             if (searchBarEl) searchBarEl.classList.add('hidden');
             this.initGoogleSignIn();
+            this.showLoader(false); // 顯示登入遮罩時，確保隱藏加載動畫以防阻擋登入
         } else {
             this.authOverlay.classList.add('hidden');
             // 登入成功後，根據當前 Active Tab 來決定是否顯示頂部單幣資訊與搜尋框
@@ -737,6 +738,8 @@ class SNRTracer {
         // 只有在當前預設 active tab 為單幣詳細分析時，才在初始化時加載分析主圖表 (避免預設載入歷史紀錄時產生不必要的 API 請求與計算)
         if (activeTabId === 'single-coin-tab') {
             this.fetchAndAnalyze(true);
+        } else {
+            this.showLoader(false); // 其他預設分頁不加載單幣分析，直接關閉加載動畫
         }
     }
 
