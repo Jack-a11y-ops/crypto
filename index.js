@@ -1523,17 +1523,14 @@ class SNRTracer {
                 });
 
                 // 3. 獲取當時 K 線資料
-                // 計算 interval 對應的毫秒數，往前退 30 根 K 線作為查詢起點
-                let intervalMs = 60 * 1000;
-                if (record.interval === '5m') intervalMs = 5 * 60 * 1000;
-                else if (record.interval === '15m') intervalMs = 15 * 60 * 1000;
-                else if (record.interval === '1h') intervalMs = 60 * 60 * 1000;
-                else if (record.interval === '4h') intervalMs = 4 * 60 * 60 * 1000;
-                else if (record.interval === '1d') intervalMs = 24 * 60 * 60 * 1000;
+                // 預設往前推 5 天作為 K 線圖的起點；5m 週期因幣安單次最大 1000 根限制，設定為往前推 2.5 天，以確保能完整包含到最新現價的走勢
+                let lookbackDays = 5;
+                if (record.interval === '5m') {
+                    lookbackDays = 2.5;
+                }
+                const queryStartTime = record.id - lookbackDays * 24 * 60 * 60 * 1000;
 
-                const queryStartTime = record.id - 30 * intervalMs;
-
-                const url = `https://api.binance.com/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=150`;
+                const url = `https://api.binance.com/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=1000`;
                 const response = await fetch(url);
                 const klines = await response.json();
 
