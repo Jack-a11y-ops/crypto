@@ -837,12 +837,40 @@ class SNRTracer {
         }
     }
 
-    async getBinanceData(symbol, interval) {
-        const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=150`;
-        const response = await fetch(url);
-        return (await response.json()).map(d => ({
-            openTime: d[0], open: d[1], high: d[2], low: d[3], close: d[4], volume: d[5]
-        }));
+    async getBinanceData(symbol, interval, limit = 150) {
+        const cleanSymbol = symbol.toUpperCase().replace('/', '');
+        let allKlines = [];
+        let lastEndTime = null;
+
+        while (allKlines.length < limit) {
+            const fetchLimit = Math.min(limit - allKlines.length, 1000);
+            if (fetchLimit <= 0) break;
+
+            let url = `https://api.binance.com/api/v3/klines?symbol=${cleanSymbol}&interval=${interval}&limit=${fetchLimit}`;
+            if (lastEndTime !== null) {
+                url += `&endTime=${lastEndTime}`;
+            }
+
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Binance API response not ok');
+            const data = await response.json();
+            if (!data || data.length === 0) break;
+
+            const formatted = data.map(d => ({
+                openTime: d[0], open: d[1], high: d[2], low: d[3], close: d[4], volume: d[5]
+            }));
+
+            allKlines = [...formatted, ...allKlines];
+
+            // 準備下一次往前抓取的 endTime
+            lastEndTime = formatted[0].openTime - 1;
+
+            if (data.length < fetchLimit) {
+                break;
+            }
+        }
+
+        return allKlines;
     }
 
     calculateEMA(data, period = 50) {
