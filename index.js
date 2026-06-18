@@ -1263,6 +1263,18 @@ class SNRTracer {
                 statusHTML = `<span class="status-pill expired">已過期 ⏳</span>`;
             }
 
+            // 計算建議槓桿倍數 (30% 預期虧損)
+            const slPercent = (Math.abs(r.entry - r.sl) / r.entry) * 100;
+            let leverageHTML = '--';
+            if (slPercent > 0) {
+                const leverage = 30 / slPercent;
+                if (leverage > 125) {
+                    leverageHTML = `<span class="text-red" style="font-weight: 700;">${leverage.toFixed(1)}x</span><div style="font-size: 10px; color: var(--text-muted);">(超限)</div>`;
+                } else {
+                    leverageHTML = `<span style="color: var(--accent-color); font-weight: 700;">${leverage.toFixed(1)}x</span>`;
+                }
+            }
+
             const typeClass = r.type === 'LONG' ? 'text-green' : 'text-red';
 
             return `
@@ -1281,6 +1293,9 @@ class SNRTracer {
                         <div>進場: $${this.formatPrice(r.entry)}</div>
                         <div class="text-green">止盈: $${this.formatPrice(r.tp)}</div>
                         <div class="text-red">止損: $${this.formatPrice(r.sl)}</div>
+                    </td>
+                    <td style="text-align: center; font-family: monospace;">
+                        ${leverageHTML}
                     </td>
                     <td style="font-family: 'Courier New', monospace; font-weight: 700; font-size: 15px;">
                         ${r.rr.toFixed(2)}
