@@ -1128,8 +1128,30 @@ class SNRTracer {
         }
 
         const now = Date.now();
-        // 防重複：如果在歷史紀錄中已存在同一個幣種、週期與訊號，且時間在 3 分鐘內，則不重複新增 (全局防重複)
-        const isDuplicate = history.some(item => 
+
+        // 尋找是否存在同幣種、同週期的 PENDING 舊交易
+        const oldPendingIndex = history.findIndex(r => 
+            r.symbol === symbol && 
+            r.interval === interval && 
+            r.status === 'PENDING'
+        );
+
+        let replaceOld = false;
+        if (oldPendingIndex !== -1) {
+            const oldPending = history[oldPendingIndex];
+            if (rr > oldPending.rr) {
+                // 新的盈虧比較佳，將舊交易改為 CLOSED，並允許寫入新交易
+                oldPending.status = 'CLOSED';
+                replaceOld = true;
+            } else {
+                // 舊的盈虧比較佳，跳過新機會
+                console.log(`[${symbol}] 舊交易 PENDING 的 rr (${oldPending.rr.toFixed(2)}) 優於或等於新機會 (rr: ${rr.toFixed(2)})，維持舊交易。`);
+                return;
+            }
+        }
+
+        // 防重複：如果不是 replaceOld，且在歷史紀錄中已存在同一個幣種、週期與訊號，且時間在 3 分鐘內，則不重複新增
+        const isDuplicate = replaceOld ? false : history.some(item => 
             item.symbol === symbol && 
             item.interval === interval && 
             item.type === type && 
@@ -1235,6 +1257,8 @@ class SNRTracer {
                 statusHTML = `<span class="status-pill tp">已止盈 🎯</span>`;
             } else if (r.status === 'SL') {
                 statusHTML = `<span class="status-pill sl">已止損 ❌</span>`;
+            } else if (r.status === 'CLOSED') {
+                statusHTML = `<span class="status-pill closed">已平倉 🔄</span>`;
             } else {
                 statusHTML = `<span class="status-pill expired">已過期 ⏳</span>`;
             }

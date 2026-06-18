@@ -1145,6 +1145,12 @@ body {
     border: 1px solid var(--glass-border);
 }
 
+.status-pill.closed {
+    background: rgba(132, 142, 156, 0.15);
+    color: #848e9c;
+    border: 1px solid rgba(132, 142, 156, 0.3);
+}
+
 /* 歷史紀錄篩選下拉選單樣式 */
 .premium-select {
     background: rgba(30, 35, 41, 0.8);

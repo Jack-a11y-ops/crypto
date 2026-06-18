@@ -162,18 +162,41 @@ async function run() {
 
         console.log(`掃描完畢。共找到 ${opportunities.length} 個符合高盈虧比 (R:R > 1.0) 的交易信號。`);
 
-        // 5. 去重篩選
+        // 5. 去重篩選與重複交易判定
         const now = Date.now();
         const newOpportunities = [];
 
         opportunities.forEach(opp => {
-            const key = `${opp.symbol}_${interval}_${opp.signal}`;
-            const lastNotified = notified[key];
-            
-            // 10 分鐘去重限制 (10 * 60 * 1000 毫秒)
-            if (!lastNotified || (now - lastNotified) > 10 * 60 * 1000) {
-                newOpportunities.push(opp);
-                notified[key] = now;
+            // 尋找是否存在同幣種、同週期的 PENDING 舊交易
+            const oldPendingIndex = history.findIndex(r => 
+                r.symbol === opp.symbol && 
+                r.interval === interval && 
+                r.status === 'PENDING'
+            );
+
+            if (oldPendingIndex !== -1) {
+                const oldPending = history[oldPendingIndex];
+                if (opp.rr > oldPending.rr) {
+                    // 新機會較佳：標記替換、跳過時間去重限制，並記錄舊交易資訊
+                    opp.replaceOld = true;
+                    opp.oldRR = oldPending.rr;
+                    opp.oldId = oldPending.id;
+                    opp.oldType = oldPending.type;
+                    opp.oldEntry = oldPending.entry;
+                    newOpportunities.push(opp);
+                } else {
+                    // 舊交易較佳：維持舊交易，跳過新機會
+                    console.log(`[${opp.symbol}] 舊交易 PENDING 的 rr (${oldPending.rr.toFixed(2)}) 優於或等於新機會 (rr: ${opp.rr.toFixed(2)})，維持舊交易。`);
+                }
+            } else {
+                // 沒有同幣種同週期的 Pending 舊交易，維持原有 10 分鐘去重邏輯
+                const key = `${opp.symbol}_${interval}_${opp.signal}`;
+                const lastNotified = notified[key];
+                
+                if (!lastNotified || (now - lastNotified) > 10 * 60 * 1000) {
+                    newOpportunities.push(opp);
+                    notified[key] = now;
+                }
             }
         });
 
@@ -190,14 +213,29 @@ async function run() {
             newOpportunities.forEach((opp, i) => {
                 const cleanSym = opp.symbol.replace('USDT', '');
                 const dir = opp.signal === 'LONG' ? '買入 (LONG) 📈' : '賣出 (SHORT) 📉';
-                messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 盈虧比: ${opp.rr.toFixed(2)}\n`;
+                
+                if (opp.replaceOld) {
+                    const oldDirStr = opp.oldType === 'LONG' ? '買入 (LONG)' : '賣出 (SHORT)';
+                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 盈虧比: ${opp.rr.toFixed(2)} 🔄\n`;
+                    messageText += `   ⚠️ 說明：此機會之盈虧比優於您進行中的舊交易（舊信號: ${oldDirStr}，進場價: $${formatPrice(opp.oldEntry)}，舊盈虧比: ${opp.oldRR.toFixed(2)}），系統已自動為您將舊交易【平倉】並替換為此新機會！\n\n`;
+                } else {
+                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 盈虧比: ${opp.rr.toFixed(2)}\n\n`;
+                }
                 
                 // 6.2 同步寫入歷史紀錄 (比照前端 saveToHistory)
                 const tp = opp.signal === 'LONG' ? opp.resistance.value : opp.support.value;
                 const sl = opp.signal === 'LONG' ? opp.support.value * 0.985 : opp.resistance.value * 1.015;
 
-                // 歷史紀錄 3 分鐘內防重複寫入
-                const isDuplicate = history.some(item => 
+                // 如果是替換舊交易，我們將舊交易的 status 標記為 CLOSED
+                if (opp.replaceOld && opp.oldId) {
+                    const oldRecord = history.find(r => r.id === opp.oldId);
+                    if (oldRecord) {
+                        oldRecord.status = 'CLOSED';
+                    }
+                }
+
+                // 歷史紀錄防重複寫入 (如果是 replaceOld，則不需防重複檢查，直接寫入)
+                const isDuplicate = opp.replaceOld ? false : history.some(item => 
                     item.symbol === opp.symbol && 
                     item.interval === interval && 
                     item.type === opp.signal && 
@@ -236,7 +274,7 @@ async function run() {
                 }
             });
 
-            messageText += `\n請儘速前往您的 SNR TRACER 平台查看詳情與設定防守點位！\n`;
+            messageText += `請儘速前往您的 SNR TRACER 平台查看詳情與設定防守點位！\n`;
             messageText += `網址：http://localhost:8000\n\n`;
             messageText += `*此信件為雲端自動發送，請勿直接回覆。`;
 
