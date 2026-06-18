@@ -259,8 +259,9 @@ async function run() {
         const emaPeriod = strategyConfig.emaPeriod || 50;
         const atrMultiplier = strategyConfig.atrMultiplier || 1.5;
         const riskRatio = strategyConfig.riskRatio || 30;
+        let paperBalance = userData.paperBalance !== undefined ? parseFloat(userData.paperBalance) : 10000.0;
 
-        console.log(`設定加載成功。掃描週期: ${interval.toUpperCase()} | 接收信箱: ${emailTarget} | 策略參數: ${emaPeriod} EMA, ${atrMultiplier}x ATR, ${riskRatio}% 風險`);
+        console.log(`設定加載成功。掃描週期: ${interval.toUpperCase()} | 接收信箱: ${emailTarget} | 策略參數: ${emaPeriod} EMA, ${atrMultiplier}x ATR, ${riskRatio}% 風險 | 虛擬餘額: ${paperBalance.toFixed(2)} USDT`);
 
         // 3. 獲取幣安前 50 大成交量 USDT 交易對
         console.log('正在從幣安獲取前 50 大成交量交易對...');
@@ -389,6 +390,17 @@ async function run() {
                     if (oldRecord) {
                         oldRecord.status = 'CLOSED';
                         oldRecord.closePrice = opp.lastPrice; // 平倉價為新交易的 entry 價格 (即當前現價)
+                        
+                        if (!oldRecord.settledBalance) {
+                            const oldPaperBalanceAtOpen = oldRecord.paperBalanceAtOpen !== undefined ? oldRecord.paperBalanceAtOpen : paperBalance;
+                            const pnlR = oldRecord.type === 'LONG'
+                                ? (opp.lastPrice - oldRecord.entry) / Math.abs(oldRecord.entry - oldRecord.sl)
+                                : (oldRecord.entry - opp.lastPrice) / Math.abs(oldRecord.entry - oldRecord.sl);
+                            const profit = oldPaperBalanceAtOpen * 0.02 * pnlR;
+                            paperBalance = parseFloat(paperBalance) + profit;
+                            oldRecord.settledBalance = true;
+                            oldRecord.realizedProfit = profit;
+                        }
                     }
                 }
 
@@ -417,6 +429,11 @@ async function run() {
                     parts.forEach(p => partMap[p.type] = p.value);
                     const timeStr = `${partMap.year}-${partMap.month}-${partMap.day} ${partMap.hour}:${partMap.minute}:${partMap.second}`;
 
+                    const slPercent = (Math.abs(opp.lastPrice - sl) / opp.lastPrice) * 100;
+                    const paperLeverage = riskRatio / slPercent;
+                    const paperMargin = paperBalance * 0.02 / (riskRatio / 100);
+                    const paperPositionValue = paperMargin * paperLeverage;
+
                     history.unshift({
                         id: now,
                         timeStr: timeStr,
@@ -428,7 +445,14 @@ async function run() {
                         sl: sl,
                         rr: opp.rr,
                         winRate: opp.winRate !== undefined ? opp.winRate : 0.50,
-                        status: 'PENDING'
+                        status: 'PENDING',
+                        
+                        // 模擬交易持倉數據快照
+                        paperBalanceAtOpen: paperBalance,
+                        slPercent: slPercent,
+                        leverage: paperLeverage,
+                        margin: paperMargin,
+                        positionValue: paperPositionValue
                     });
                 }
             });
@@ -480,6 +504,7 @@ async function run() {
                 body: JSON.stringify({
                     history: history,
                     notified: notified,
+                    paperBalance: paperBalance,
                     updatedAt: { ".sv": "timestamp" }
                 })
             });

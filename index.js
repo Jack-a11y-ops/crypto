@@ -31,6 +31,7 @@ class SNRTracer {
         this.backtestChart = null; // 回測資金曲線圖表
         this.backtestLineSeries = null; // 回測資金折線圖
         this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
+        this.paperBalance = 10000.0;
 
         this.init();
     }
@@ -732,6 +733,9 @@ class SNRTracer {
                     if (cloudData.strategyConfig) {
                         localStorage.setItem(`snr_strategy_config_${user.email}`, JSON.stringify(cloudData.strategyConfig));
                     }
+                    if (cloudData.paperBalance !== undefined) {
+                        localStorage.setItem(`snr_paper_balance_${user.email}`, cloudData.paperBalance);
+                    }
                 }
             } catch (e) {
                 console.error("Firebase load sync error, falling back to local:", e);
@@ -753,8 +757,9 @@ class SNRTracer {
             }
         }
         
-        // 登入成功後載入自定義策略參數設定與 EmailJS 設定
+        // 登入成功後載入自定義策略參數設定、虛擬帳戶與 EmailJS 設定
         this.initStrategyConfig();
+        this.initPaperAccount();
         this.initEmailJS();
         
         // 如果是登入的使用者，且不是訪客，則開啟每 20 分鐘的自動雷達掃描
@@ -1456,6 +1461,13 @@ class SNRTracer {
         );
         if (isDuplicate) return;
 
+        // 計算模擬倉位資訊
+        const slPercent = (Math.abs(entry - sl) / entry) * 100;
+        const riskRatio = this.strategyConfig.riskRatio || 30;
+        const paperLeverage = riskRatio / slPercent;
+        const paperMargin = this.paperBalance * 0.02 / (riskRatio / 100);
+        const paperPositionValue = paperMargin * paperLeverage;
+
         const date = new Date(now);
         const timeStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
 
@@ -1470,8 +1482,33 @@ class SNRTracer {
             sl: sl,
             rr: rr,
             winRate: winRate !== undefined ? winRate : 0.50,
-            status: 'PENDING'
+            status: 'PENDING',
+            
+            // 模擬交易持倉數據快照
+            paperBalanceAtOpen: this.paperBalance,
+            slPercent: slPercent,
+            leverage: paperLeverage,
+            margin: paperMargin,
+            positionValue: paperPositionValue
         };
+
+        // 如果是替換舊交易，先為舊交易進行餘額盈虧結算
+        if (replaceOld && oldPendingIndex !== -1) {
+            const oldPending = history[oldPendingIndex];
+            if (!oldPending.settledBalance) {
+                const oldPaperBalanceAtOpen = oldPending.paperBalanceAtOpen || this.paperBalance;
+                const pnlR = oldPending.type === 'LONG'
+                    ? (entry - oldPending.entry) / Math.abs(oldPending.entry - oldPending.sl)
+                    : (oldPending.entry - entry) / Math.abs(oldPending.entry - oldPending.sl);
+                const profit = oldPaperBalanceAtOpen * 0.02 * pnlR;
+                
+                this.paperBalance = parseFloat(this.paperBalance) + profit;
+                localStorage.setItem(`snr_paper_balance_${email}`, this.paperBalance);
+                
+                oldPending.settledBalance = true;
+                oldPending.realizedProfit = profit;
+            }
+        }
 
         history.unshift(newRecord);
 
@@ -1481,10 +1518,13 @@ class SNRTracer {
         }
 
         localStorage.setItem(historyKey, JSON.stringify(history));
+        this.updatePaperAccountUI();
+        this.syncToCloud();
     }
 
     renderHistory(shouldCheck = true) {
         if (!this.currentUser) return;
+        this.updatePaperAccountUI();
         const email = this.currentUser.email;
         const historyKey = `snr_history_${email}`;
         let history = [];
@@ -1567,20 +1607,44 @@ class SNRTracer {
                 if (r.currentPrice !== undefined && r.percentChange !== undefined) {
                     const percentStr = r.percentChange >= 0 ? `+${r.percentChange.toFixed(2)}%` : `${r.percentChange.toFixed(2)}%`;
                     const percentClass = r.percentChange >= 0 ? 'text-green' : 'text-red';
+                    
+                    // 計算模擬交易的未實現盈虧
+                    let paperPnLHTML = '';
+                    if (r.paperBalanceAtOpen !== undefined && r.slPercent !== undefined) {
+                        const pnlR = r.type === 'LONG'
+                            ? (r.currentPrice - r.entry) / Math.abs(r.entry - r.sl)
+                            : (r.entry - r.currentPrice) / Math.abs(r.entry - r.sl);
+                        const unrealProfit = r.paperBalanceAtOpen * 0.02 * pnlR;
+                        const unrealStr = unrealProfit >= 0 ? `+$${unrealProfit.toFixed(2)}` : `-$${Math.abs(unrealProfit).toFixed(2)}`;
+                        const unrealClass = unrealProfit >= 0 ? 'text-green' : 'text-red';
+                        paperPnLHTML = `未實現: <span class="${unrealClass}" style="font-weight: 700;">${unrealStr}</span><br>`;
+                    }
+
                     statusHTML = `
                         <span class="status-pill pending">進行中 ⏳</span>
                         <div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">
                             現價: $${this.formatPrice(r.currentPrice)}<br>
-                            漲跌: <span class="${percentClass}" style="font-weight: 700;">${percentStr}</span>
+                            漲跌: <span class="${percentClass}" style="font-weight: 700;">${percentStr}</span><br>
+                            ${paperPnLHTML}
                         </div>
                     `;
                 } else {
                     statusHTML = `<span class="status-pill pending">進行中 ⏳</span>`;
                 }
             } else if (r.status === 'TP') {
-                statusHTML = `<span class="status-pill tp">已止盈 🎯</span>`;
+                const profit = r.realizedProfit !== undefined ? r.realizedProfit : ((r.paperBalanceAtOpen || 10000) * 0.02 * (r.rr || 1.5));
+                const profitHTML = `<div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">收益: <span class="text-green" style="font-weight: 700;">+$${profit.toFixed(2)}</span></div>`;
+                statusHTML = `
+                    <span class="status-pill tp">已止盈 🎯</span>
+                    ${profitHTML}
+                `;
             } else if (r.status === 'SL') {
-                statusHTML = `<span class="status-pill sl">已止損 ❌</span>`;
+                const profit = r.realizedProfit !== undefined ? r.realizedProfit : -((r.paperBalanceAtOpen || 10000) * 0.02);
+                const profitHTML = `<div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">收益: <span class="text-red" style="font-weight: 700;">-$${Math.abs(profit).toFixed(2)}</span></div>`;
+                statusHTML = `
+                    <span class="status-pill sl">已止損 ❌</span>
+                    ${profitHTML}
+                `;
             } else if (r.status === 'CLOSED') {
                 if (r.closePrice !== undefined && r.closePrice !== null) {
                     const risk = Math.abs(r.entry - r.sl);
@@ -1592,18 +1656,26 @@ class SNRTracer {
                     }
                     const pnlStr = pnlChange >= 0 ? `+${pnlChange.toFixed(2)} R` : `${pnlChange.toFixed(2)} R`;
                     const pnlClass = pnlChange >= 0 ? 'text-green' : 'text-red';
+                    
+                    const profit = r.realizedProfit !== undefined ? r.realizedProfit : ((r.paperBalanceAtOpen || 10000) * 0.02 * pnlChange);
+                    const profitStr = profit >= 0 ? `+$${profit.toFixed(2)}` : `-$${Math.abs(profit).toFixed(2)}`;
+                    const profitHTML = `金額: <span class="${pnlClass}" style="font-weight: 700;">${profitStr}</span><br>`;
+
                     statusHTML = `
                         <span class="status-pill closed">已平倉 🔄</span>
                         <div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">
                             平倉價: $${this.formatPrice(r.closePrice)}<br>
-                            收益: <span class="${pnlClass}" style="font-weight: 700;">${pnlStr}</span>
+                            收益: <span class="${pnlClass}" style="font-weight: 700;">${pnlStr}</span><br>
+                            ${profitHTML}
                         </div>
                     `;
                 } else {
+                    const profit = r.realizedProfit !== undefined ? r.realizedProfit : -((r.paperBalanceAtOpen || 10000) * 0.02);
                     statusHTML = `
                         <span class="status-pill closed">已平倉 🔄</span>
                         <div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">
-                            收益: <span class="text-red" style="font-weight: 700;">-1.00 R</span>
+                            收益: <span class="text-red" style="font-weight: 700;">-1.00 R</span><br>
+                            金額: <span class="text-red" style="font-weight: 700;">-$${Math.abs(profit).toFixed(2)}</span>
                         </div>
                     `;
                 }
@@ -2653,6 +2725,7 @@ class SNRTracer {
                     if (record.type === 'LONG') {
                         if (low <= record.sl) {
                             record.status = 'SL';
+                            this.settlePaperTrade(record, 'SL');
                             hasUpdates = true;
                             this.showNotification(
                                 `❌ 交易已止損 (Stop Loss)`,
@@ -2662,6 +2735,7 @@ class SNRTracer {
                         }
                         if (high >= record.tp) {
                             record.status = 'TP';
+                            this.settlePaperTrade(record, 'TP');
                             hasUpdates = true;
                             this.showNotification(
                                 `🎯 交易已止盈 (Take Profit)`,
@@ -2672,6 +2746,7 @@ class SNRTracer {
                     } else if (record.type === 'SHORT') {
                         if (high >= record.sl) {
                             record.status = 'SL';
+                            this.settlePaperTrade(record, 'SL');
                             hasUpdates = true;
                             this.showNotification(
                                 `❌ 交易已止損 (Stop Loss)`,
@@ -2681,6 +2756,7 @@ class SNRTracer {
                         }
                         if (low <= record.tp) {
                             record.status = 'TP';
+                            this.settlePaperTrade(record, 'TP');
                             hasUpdates = true;
                             this.showNotification(
                                 `🎯 交易已止盈 (Take Profit)`,
@@ -2703,6 +2779,7 @@ class SNRTracer {
 
         if (hasUpdates) {
             localStorage.setItem(historyKey, JSON.stringify(history));
+            this.updatePaperAccountUI();
             this.renderHistory(false);
             this.syncToCloud(); // 結算狀態更新後，異步同步至雲端
         }
@@ -2761,6 +2838,7 @@ class SNRTracer {
                 history: history,
                 emailConfig: emailConfig,
                 strategyConfig: strategyConfig,
+                paperBalance: this.paperBalance,
                 updatedAt: firebase.database.ServerValue.TIMESTAMP
             });
         } catch (e) {
@@ -2792,6 +2870,137 @@ class SNRTracer {
         if (config.publicKey && typeof emailjs !== 'undefined') {
             emailjs.init(config.publicKey);
         }
+    }
+
+    settlePaperTrade(record, finalStatus) {
+        if (!this.currentUser || record.settledBalance) return;
+        const email = this.currentUser.email;
+
+        // 如果是歷史舊紀錄沒有 paperBalanceAtOpen 欄位，fallback 使用當前 paperBalance
+        const paperBalanceAtOpen = record.paperBalanceAtOpen !== undefined ? record.paperBalanceAtOpen : this.paperBalance;
+        
+        let pnlR = -1.0;
+        if (finalStatus === 'TP') {
+            pnlR = record.rr || 1.5;
+        } else if (finalStatus === 'SL') {
+            pnlR = -1.0;
+        }
+
+        const profit = paperBalanceAtOpen * 0.02 * pnlR;
+        this.paperBalance = parseFloat(this.paperBalance) + profit;
+        localStorage.setItem(`snr_paper_balance_${email}`, this.paperBalance);
+
+        record.settledBalance = true;
+        record.realizedProfit = profit;
+    }
+
+    initPaperAccount() {
+        if (!this.currentUser) return;
+        const email = this.currentUser.email;
+        const balanceKey = `snr_paper_balance_${email}`;
+        
+        let localBalance = localStorage.getItem(balanceKey);
+        if (localBalance !== null && !isNaN(parseFloat(localBalance))) {
+            this.paperBalance = parseFloat(localBalance);
+        } else {
+            this.paperBalance = 10000.0;
+            localStorage.setItem(balanceKey, this.paperBalance);
+        }
+
+        // 綁定重置按鈕事件
+        const resetBtn = document.getElementById('reset-paper-account-btn');
+        if (resetBtn) {
+            resetBtn.onclick = () => this.resetPaperAccount();
+        }
+
+        this.updatePaperAccountUI();
+    }
+
+    updatePaperAccountUI() {
+        if (!this.currentUser) return;
+        const email = this.currentUser.email;
+        const historyKey = `snr_history_${email}`;
+        let history = [];
+        try {
+            history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+        } catch (e) {
+            history = [];
+        }
+
+        // 1. 計算未實現盈虧與已實現盈虧
+        let unrealizedPnL = 0.0;
+        let realizedPnL = 0.0;
+        let activeMargin = 0.0;
+
+        history.forEach(r => {
+            if (r.status === 'PENDING') {
+                if (r.paperBalanceAtOpen !== undefined && r.slPercent !== undefined) {
+                    const margin = r.margin !== undefined ? r.margin : (r.paperBalanceAtOpen * 2 / (this.strategyConfig.riskRatio || 30));
+                    const paperBalanceAtOpen = r.paperBalanceAtOpen;
+
+                    activeMargin += margin;
+
+                    if (r.currentPrice !== undefined) {
+                        const pnlR = r.type === 'LONG'
+                            ? (r.currentPrice - r.entry) / Math.abs(r.entry - r.sl)
+                            : (r.entry - r.currentPrice) / Math.abs(r.entry - r.sl);
+                        unrealizedPnL += paperBalanceAtOpen * 0.02 * pnlR;
+                    }
+                }
+            } else if (r.settledBalance && r.realizedProfit !== undefined) {
+                realizedPnL += r.realizedProfit;
+            }
+        });
+
+        const totalEquity = this.paperBalance + unrealizedPnL;
+        const availableBalance = Math.max(0, this.paperBalance - activeMargin);
+
+        // 2. 更新 DOM 元素
+        const equityEl = document.getElementById('paper-account-equity');
+        const unrealizedEl = document.getElementById('paper-account-unrealized');
+        const realizedEl = document.getElementById('paper-account-realized');
+        const balanceEl = document.getElementById('paper-account-balance');
+
+        if (equityEl) equityEl.innerText = `${totalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+        if (balanceEl) balanceEl.innerText = `${availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+
+        if (unrealizedEl) {
+            unrealizedEl.innerText = `${unrealizedPnL >= 0 ? '+' : ''}${unrealizedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+            if (unrealizedPnL > 0) {
+                unrealizedEl.style.color = '#0ecb81';
+            } else if (unrealizedPnL < 0) {
+                unrealizedEl.style.color = '#f6465d';
+            } else {
+                unrealizedEl.style.color = 'var(--text-muted)';
+            }
+        }
+
+        if (realizedEl) {
+            realizedEl.innerText = `${realizedPnL >= 0 ? '+' : ''}${realizedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+            if (realizedPnL > 0) {
+                realizedEl.style.color = '#0ecb81';
+            } else if (realizedPnL < 0) {
+                realizedEl.style.color = '#f6465d';
+            } else {
+                realizedEl.style.color = 'var(--text-muted)';
+            }
+        }
+    }
+
+    async resetPaperAccount() {
+        if (!this.currentUser) return;
+        if (!confirm('確定要將模擬帳戶重置為 10,000.00 USDT 嗎？\n這將會清除您所有的模擬交易與歷史分析紀錄！')) return;
+
+        const email = this.currentUser.email;
+        this.paperBalance = 10000.0;
+        localStorage.setItem(`snr_paper_balance_${email}`, this.paperBalance);
+        localStorage.setItem(`snr_history_${email}`, JSON.stringify([]));
+
+        alert('模擬帳戶與歷史紀錄重置成功！');
+        
+        this.updatePaperAccountUI();
+        this.renderHistory(false);
+        await this.syncToCloud();
     }
 
     initStrategyConfig() {

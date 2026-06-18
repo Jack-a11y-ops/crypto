@@ -306,6 +306,30 @@
                     </div>
                 </div>
                 
+                <!-- 虛擬帳戶模擬交易系統面板 -->
+                <div class="scanner-stats paper-trading-stats-panel" style="margin-bottom: 20px; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px;">
+                    <div class="stat-card" style="border-left: 3px solid var(--accent-color); padding-left: 12px;">
+                        <span class="stat-label" style="color: var(--accent-color); font-weight: 600;">虛擬帳戶總權益</span>
+                        <span class="stat-value" id="paper-account-equity" style="color: white; font-weight: bold;">10,000.00 USDT</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">未實現盈虧 (Unrealized PnL)</span>
+                        <span class="stat-value" id="paper-account-unrealized" style="font-weight: bold; color: var(--text-muted);">0.00 USDT</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">已實現盈虧 (Realized PnL)</span>
+                        <span class="stat-value" id="paper-account-realized" style="font-weight: bold; color: var(--text-muted);">0.00 USDT</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">可用帳戶餘額</span>
+                        <span class="stat-value" id="paper-account-balance" style="font-weight: bold; color: var(--text-main);">10,000.00 USDT</span>
+                    </div>
+                    <div class="stat-card" style="display: flex; flex-direction: column; justify-content: center; align-items: flex-end; padding-right: 10px;">
+                        <span style="font-size: 10px; color: var(--text-muted); margin-bottom: 5px; text-align: right; width: 100%;">單筆風險限制: 2%</span>
+                        <button id="reset-paper-account-btn" class="danger-btn-sm" style="margin: 0; padding: 6px 12px; font-size: 11px; height: auto; width: auto;">重置餘額</button>
+                    </div>
+                </div>
+                
                 <div class="scanner-stats">
                     <div class="stat-card">
                         <span class="stat-label">總分析信號</span>
