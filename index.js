@@ -24,8 +24,10 @@ class SNRTracer {
         this.modalCandlestickSeries = null;
         this.modalPriceLines = [];
         this.tpPriceLine = null; // 儲存 Modal 的 TP 價格線實例
+        this.slPriceLine = null; // 儲存 Modal 的 SL 價格線實例
         this.currentDragRecord = null; // 儲存當前點選的歷史紀錄資料
         this.isDraggingTP = false; // 是否正在拖曳 TP 線
+        this.isDraggingSL = false; // 是否正在拖曳 SL 線
 
         this.init();
     }
@@ -1605,6 +1607,7 @@ class SNRTracer {
                     title: `❌ 止損位 $${this.formatPrice(record.sl)}`,
                 });
                 this.modalPriceLines.push(slLine);
+                this.slPriceLine = slLine; // 保存給拖曳功能使用
 
                 // 4.4 最新現價 (黃實線)
                 const currentLine = this.modalCandlestickSeries.createPriceLine({
@@ -1641,8 +1644,10 @@ class SNRTracer {
             this.modalCandlestickSeries = null;
             this.modalPriceLines = [];
             this.tpPriceLine = null;
+            this.slPriceLine = null;
             this.currentDragRecord = null;
             this.isDraggingTP = false;
+            this.isDraggingSL = false;
         }
         const chartContainer = document.getElementById('modal-tv-chart');
         if (chartContainer) {
@@ -1652,43 +1657,54 @@ class SNRTracer {
     }
 
     handleChartMouseDown(e) {
-        if (!this.modalChart || !this.modalCandlestickSeries || !this.currentDragRecord || !this.tpPriceLine) return;
+        if (!this.modalChart || !this.modalCandlestickSeries || !this.currentDragRecord) return;
         
         const chartContainer = document.getElementById('modal-tv-chart');
         const rect = chartContainer.getBoundingClientRect();
         const mouseY = e.clientY - rect.top;
         
-        // 計算 TP 線當前的 Y 座標
-        const tpY = this.modalCandlestickSeries.priceToCoordinate(this.currentDragRecord.tp);
-        if (tpY === null) return;
+        // 計算 TP 與 SL 線當前的 Y 座標
+        let tpY = null;
+        let slY = null;
+        if (this.tpPriceLine) {
+            tpY = this.modalCandlestickSeries.priceToCoordinate(this.currentDragRecord.tp);
+        }
+        if (this.slPriceLine) {
+            slY = this.modalCandlestickSeries.priceToCoordinate(this.currentDragRecord.sl);
+        }
         
-        // 12 像素之內點擊視為選中 TP 線進行拖曳
-        if (Math.abs(mouseY - tpY) < 12) {
+        // 12 像素之內點擊視為選中對應線進行拖曳
+        if (tpY !== null && Math.abs(mouseY - tpY) < 12) {
             this.isDraggingTP = true;
+            chartContainer.style.cursor = 'ns-resize';
+            e.preventDefault(); // 防止選中文字
+        } else if (slY !== null && Math.abs(mouseY - slY) < 12) {
+            this.isDraggingSL = true;
             chartContainer.style.cursor = 'ns-resize';
             e.preventDefault(); // 防止選中文字
         }
     }
 
     handleChartMouseMove(e) {
-        if (!this.modalChart || !this.modalCandlestickSeries || !this.currentDragRecord || !this.tpPriceLine) return;
+        if (!this.modalChart || !this.modalCandlestickSeries || !this.currentDragRecord) return;
         
         const chartContainer = document.getElementById('modal-tv-chart');
         const rect = chartContainer.getBoundingClientRect();
         const mouseY = e.clientY - rect.top;
+        const record = this.currentDragRecord;
         
-        // 計算 TP 線當前的 Y 座標
-        const tpY = this.modalCandlestickSeries.priceToCoordinate(this.currentDragRecord.tp);
+        // 計算 TP 與 SL 線當前的 Y 座標
+        let tpY = null;
+        let slY = null;
+        if (this.tpPriceLine) tpY = this.modalCandlestickSeries.priceToCoordinate(record.tp);
+        if (this.slPriceLine) slY = this.modalCandlestickSeries.priceToCoordinate(record.sl);
         
-        if (this.isDraggingTP) {
-            // 進行拖曳
+        if (this.isDraggingTP && this.tpPriceLine) {
+            // 進行 TP 拖曳
             chartContainer.style.cursor = 'ns-resize';
             const price = this.modalCandlestickSeries.coordinateToPrice(mouseY);
             if (price !== null && price > 0) {
-                // 限制價格：例如 LONG 的 TP 必須高於進場價；SHORT 的 TP 必須低於進場價
                 let validPrice = price;
-                const record = this.currentDragRecord;
-                
                 if (record.type === 'LONG') {
                     // LONG: TP 不能低於進場價 + 0.1% 緩衝
                     const minTP = record.entry * 1.001;
@@ -1699,25 +1715,49 @@ class SNRTracer {
                     if (validPrice > maxTP) validPrice = maxTP;
                 }
                 
-                // 保留適當精度
                 const precisionPrice = parseFloat(validPrice.toFixed(8));
-                this.currentDragRecord.tp = precisionPrice;
+                record.tp = precisionPrice;
                 
-                // 動態更新線條位置與 Title
                 this.tpPriceLine.applyOptions({
                     price: precisionPrice,
                     title: `🎯 止盈位 (拖曳中) $${this.formatPrice(precisionPrice)}`
                 });
                 
-                // 同步更新 Modal 頂部數值顯示
                 const modalTpEl = document.getElementById('modal-tp');
-                if (modalTpEl) {
-                    modalTpEl.innerText = `$${this.formatPrice(precisionPrice)}`;
+                if (modalTpEl) modalTpEl.innerText = `$${this.formatPrice(precisionPrice)}`;
+            }
+        } else if (this.isDraggingSL && this.slPriceLine) {
+            // 進行 SL 拖曳
+            chartContainer.style.cursor = 'ns-resize';
+            const price = this.modalCandlestickSeries.coordinateToPrice(mouseY);
+            if (price !== null && price > 0) {
+                let validPrice = price;
+                if (record.type === 'LONG') {
+                    // LONG: SL 不能高於進場價 - 0.1% 緩衝
+                    const maxSL = record.entry * 0.999;
+                    if (validPrice > maxSL) validPrice = maxSL;
+                } else {
+                    // SHORT: SL 不能低於進場價 + 0.1% 緩衝
+                    const minSL = record.entry * 1.001;
+                    if (validPrice < minSL) validPrice = minSL;
                 }
+                
+                const precisionPrice = parseFloat(validPrice.toFixed(8));
+                record.sl = precisionPrice;
+                
+                this.slPriceLine.applyOptions({
+                    price: precisionPrice,
+                    title: `❌ 止損位 (拖曳中) $${this.formatPrice(precisionPrice)}`
+                });
+                
+                const modalSlEl = document.getElementById('modal-sl');
+                if (modalSlEl) modalSlEl.innerText = `$${this.formatPrice(precisionPrice)}`;
             }
         } else {
-            // 尚未拖曳，滑鼠滑過時如果是靠近 TP 線則顯示拖曳 cursor
-            if (tpY !== null && Math.abs(mouseY - tpY) < 12) {
+            // 尚未拖曳，滑鼠滑過時如果是靠近 TP/SL 線則顯示拖曳 cursor
+            const isNearTP = tpY !== null && Math.abs(mouseY - tpY) < 12;
+            const isNearSL = slY !== null && Math.abs(mouseY - slY) < 12;
+            if (isNearTP || isNearSL) {
                 chartContainer.style.cursor = 'ns-resize';
             } else {
                 chartContainer.style.cursor = 'default';
@@ -1726,30 +1766,44 @@ class SNRTracer {
     }
 
     async handleChartMouseUp(e) {
-        if (!this.isDraggingTP || !this.currentDragRecord || !this.tpPriceLine) {
+        if ((!this.isDraggingTP && !this.isDraggingSL) || !this.currentDragRecord) {
             this.isDraggingTP = false;
+            this.isDraggingSL = false;
             return;
         }
         
+        const wasDraggingTP = this.isDraggingTP;
+        const wasDraggingSL = this.isDraggingSL;
+        
         this.isDraggingTP = false;
+        this.isDraggingSL = false;
+        
         const chartContainer = document.getElementById('modal-tv-chart');
         if (chartContainer) {
             chartContainer.style.cursor = 'default';
         }
         
         const record = this.currentDragRecord;
-        const newTP = record.tp;
         
         // 恢復價格線的最終標題
-        this.tpPriceLine.applyOptions({
-            title: `🎯 止盈位 $${this.formatPrice(newTP)}`
-        });
+        if (wasDraggingTP && this.tpPriceLine) {
+            this.tpPriceLine.applyOptions({
+                title: `🎯 止盈位 $${this.formatPrice(record.tp)}`
+            });
+        }
+        if (wasDraggingSL && this.slPriceLine) {
+            this.slPriceLine.applyOptions({
+                title: `❌ 止損位 $${this.formatPrice(record.sl)}`
+            });
+        }
         
         // 1. 重新計算該筆紀錄的盈虧比 (R:R)
         // 盈虧比 = |tp - entry| / |entry - sl|
         const risk = Math.abs(record.entry - record.sl);
         if (risk > 0) {
-            record.rr = Math.abs(newTP - record.entry) / risk;
+            record.rr = Math.abs(record.tp - record.entry) / risk;
+        } else {
+            record.rr = 0;
         }
         
         // 2. 更新 LocalStorage
@@ -1759,7 +1813,8 @@ class SNRTracer {
             let history = JSON.parse(localStorage.getItem(historyKey) || '[]');
             const index = history.findIndex(r => r.id === record.id);
             if (index !== -1) {
-                history[index].tp = newTP;
+                history[index].tp = record.tp;
+                history[index].sl = record.sl;
                 history[index].rr = record.rr;
                 localStorage.setItem(historyKey, JSON.stringify(history));
                 
@@ -1770,7 +1825,7 @@ class SNRTracer {
                 }
             }
         } catch (err) {
-            console.error("Save dragged TP error:", err);
+            console.error("Save dragged price lines error:", err);
         }
         
         // 4. 重新刷新歷史表格 (不需發送網路請求)
