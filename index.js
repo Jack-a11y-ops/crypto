@@ -1068,6 +1068,16 @@ class SNRTracer {
         radarList.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 40px; color: var(--text-muted);">正在掃描前 50 大成交量幣種，這大約需要 3-5 秒鐘，請稍候...</td></tr>';
 
         try {
+            // 先獲取當前歷史紀錄以供重複交易與盈虧比判定
+            const email = this.currentUser ? this.currentUser.email : 'guest';
+            const historyKey = `snr_history_${email}`;
+            let history = [];
+            try {
+                history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+            } catch (e) {
+                history = [];
+            }
+
             // 1. 獲取成交量前 50 大 USDT 交易對
             const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
@@ -1098,40 +1108,71 @@ class SNRTracer {
                             signal: analysis.signal,
                             rr: analysis.rr,
                             tp: analysis.tp,
-                            sl: analysis.sl
+                            sl: analysis.sl,
+                            lastPrice: lastPrice
                         });
-
-                        // 將掃描出的機會寫入歷史紀錄 (此時只存 localStorage，最後統一同步至雲端)
-                        this.saveToHistory(
-                            item.symbol,
-                            this.interval,
-                            analysis.signal,
-                            lastPrice,
-                            analysis.tp,
-                            analysis.sl,
-                            analysis.rr
-                        );
                     }
                 } catch (e) {
                     console.warn(`Skip ${item.symbol} due to error`);
                 }
             }
 
-            // 去重與通知檢測
+            // 3. 去重篩選與重複交易判定 (比照 radar_scan.js 雲端自動掃描機制)
             const now = Date.now();
             const newOpportunities = [];
-            
+            const savedOpportunities = [];
+
             opportunities.forEach(opp => {
-                const key = `${opp.symbol}_${this.interval}_${opp.signal}`;
-                const lastNotified = this.notifiedOpportunities[key];
-                
-                // 10 分鐘去重 (10 * 60 * 1000 毫秒)
-                if (!lastNotified || (now - lastNotified) > 10 * 60 * 1000) {
-                    newOpportunities.push(opp);
-                    this.notifiedOpportunities[key] = now;
+                // 尋找是否存在同幣種、同週期的 PENDING 舊交易
+                const oldPendingIndex = history.findIndex(r => 
+                    r.symbol === opp.symbol && 
+                    r.interval === this.interval && 
+                    r.status === 'PENDING'
+                );
+
+                if (oldPendingIndex !== -1) {
+                    const oldPending = history[oldPendingIndex];
+                    if (opp.rr > oldPending.rr) {
+                        // 新機會較佳：標記替換、跳過時間去重限制，並記錄舊交易資訊
+                        opp.replaceOld = true;
+                        opp.oldRR = oldPending.rr;
+                        opp.oldId = oldPending.id;
+                        opp.oldType = oldPending.type;
+                        opp.oldEntry = oldPending.entry;
+                        newOpportunities.push(opp);
+                        savedOpportunities.push(opp);
+                    } else {
+                        // 舊交易較佳：維持舊交易，跳過新機會
+                        console.log(`[${opp.symbol}] 舊交易 PENDING 的 rr (${oldPending.rr.toFixed(2)}) 優於或等於新機會 (rr: ${opp.rr.toFixed(2)})，維持舊交易。`);
+                    }
+                } else {
+                    // 沒有同幣種同週期的 Pending 舊交易，維持原有 10 分鐘去重邏輯
+                    const key = `${opp.symbol}_${this.interval}_${opp.signal}`;
+                    const lastNotified = this.notifiedOpportunities[key];
+                    
+                    if (!lastNotified || (now - lastNotified) > 10 * 60 * 1000) {
+                        newOpportunities.push(opp);
+                        this.notifiedOpportunities[key] = now;
+                    }
+                    // 全新無重複的交易也需要保留並寫入
+                    savedOpportunities.push(opp);
                 }
             });
 
+            // 4. 將篩選出的機會寫入歷史紀錄 (此時只存 localStorage，最後統一同步至雲端)
+            savedOpportunities.forEach(opp => {
+                this.saveToHistory(
+                    opp.symbol,
+                    this.interval,
+                    opp.signal,
+                    opp.lastPrice,
+                    opp.tp,
+                    opp.sl,
+                    opp.rr
+                );
+            });
+
+            // 5. 發送通知與去重檢測
             if (newOpportunities.length > 0) {
                 // 1. 發送 Email 通知
                 this.sendEmailNotification(newOpportunities);
@@ -1141,8 +1182,9 @@ class SNRTracer {
                     const opp = newOpportunities[0];
                     const cleanSym = opp.symbol.replace('USDT', '');
                     const dir = opp.signal === 'LONG' ? '買入 (LONG)' : '賣出 (SHORT)';
+                    const extraMsg = opp.replaceOld ? ' (🔄 已自動平倉替換舊交易)' : '';
                     this.showNotification(
-                        `📬 發現新交易機會！`,
+                        `📬 發現新交易機會！${extraMsg}`,
                         `【雷達】${cleanSym} (${this.interval.toUpperCase()}) 建議信號: ${dir}，盈虧比: ${opp.rr.toFixed(2)}。`
                     );
                 } else {
@@ -1155,24 +1197,31 @@ class SNRTracer {
             }
 
             // 批量同步至 Firebase 雲端資料庫
-            if (opportunities.length > 0) {
+            if (savedOpportunities.length > 0) {
                 this.syncToCloud();
             }
 
-            // 3. 更新 UI
-            radarCount.innerText = `${opportunities.length} 標的`;
+            // 6. 更新 UI 列表
+            radarCount.innerText = `${savedOpportunities.length} 標的`;
             radarStatus.innerText = '掃描完成';
             
-            if (opportunities.length === 0) {
+            if (savedOpportunities.length === 0) {
                 radarList.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 40px; color: var(--text-muted);">目前無符合高盈虧比 (盈虧比 > 1) 的交易機會</td></tr>';
             } else {
-                radarList.innerHTML = opportunities
+                radarList.innerHTML = savedOpportunities
                     .sort((a, b) => b.rr - a.rr) // 按 RR 排序
                     .map(opp => {
                         const rrPercent = Math.min(opp.rr * 20, 100); // 將 RR 轉化為進度條百分比
+                        const replaceLabel = opp.replaceOld 
+                            ? `<span style="font-size: 11px; color: var(--accent-color); margin-left: 6px;" title="此機會之盈虧比優於您進行中的舊交易，系統已自動將舊交易平倉並替換！">🔄 替換</span>` 
+                            : '';
                         return `
                             <tr>
-                                <td><span class="symbol-name">${opp.symbol.replace('USDT', '')}</span><span style="color: var(--text-muted); font-size: 12px; margin-left: 5px;">/USDT</span></td>
+                                <td>
+                                    <span class="symbol-name">${opp.symbol.replace('USDT', '')}</span>
+                                    <span style="color: var(--text-muted); font-size: 12px; margin-left: 5px;">/USDT</span>
+                                    ${replaceLabel}
+                                </td>
                                 <td>
                                     <span class="signal-badge ${opp.signal === 'LONG' ? 'long' : 'short'}">
                                         ${opp.signal === 'LONG' ? '買入 (LONG)' : '賣出 (SHORT)'}
@@ -2337,7 +2386,13 @@ class SNRTracer {
             newOpps.forEach((opp, i) => {
                 const cleanSym = opp.symbol.replace('USDT', '');
                 const dir = opp.signal === 'LONG' ? '買入 (LONG) 📈' : '賣出 (SHORT) 📉';
-                messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 盈虧比: ${opp.rr.toFixed(2)}\n`;
+                if (opp.replaceOld) {
+                    const oldDirStr = opp.oldType === 'LONG' ? '買入 (LONG)' : '賣出 (SHORT)';
+                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 盈虧比: ${opp.rr.toFixed(2)} 🔄\n`;
+                    messageText += `   ⚠️ 說明：此機會之盈虧比優於您進行中的舊交易（舊信號: ${oldDirStr}，進場價: $${this.formatPrice(opp.oldEntry)}，舊盈虧比: ${opp.oldRR.toFixed(2)}），系統已自動為您將舊交易【平倉】並替換為此新機會！\n\n`;
+                } else {
+                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 盈虧比: ${opp.rr.toFixed(2)}\n`;
+                }
             });
 
             messageText += `\n請儘速前往 SNR TRACER 平台查看詳情與設定您的進出場防守點位！\n`;
