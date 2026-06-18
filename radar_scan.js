@@ -294,10 +294,9 @@ async function run() {
         const newOpportunities = [];
 
         opportunities.forEach(opp => {
-            // 尋找是否存在同幣種、同週期的 PENDING 舊交易
+            // 尋找是否存在同幣種的 PENDING 舊交易 (不限時間週期)
             const oldPendingIndex = history.findIndex(r => 
                 r.symbol === opp.symbol && 
-                r.interval === interval && 
                 r.status === 'PENDING'
             );
 
@@ -313,10 +312,11 @@ async function run() {
                     opp.oldId = oldPending.id;
                     opp.oldType = oldPending.type;
                     opp.oldEntry = oldPending.entry;
+                    opp.oldInterval = oldPending.interval;
                     newOpportunities.push(opp);
                 } else {
                     // 舊交易較佳：維持舊交易，跳過新機會
-                    console.log(`[${opp.symbol}] 舊交易 PENDING 的 winRate (${(oldWinRate * 100).toFixed(0)}%) 優於或等於新機會 (${(newWinRate * 100).toFixed(0)}%)，維持舊交易。`);
+                    console.log(`[${opp.symbol}] 舊交易 PENDING (${oldPending.interval.toUpperCase()}) 的 winRate (${(oldWinRate * 100).toFixed(0)}%) 優於或等於新機會 (${(newWinRate * 100).toFixed(0)}%)，維持舊交易。`);
                 }
             } else {
                 // 沒有同幣種同週期的 Pending 舊交易，維持原有 10 分鐘去重邏輯
@@ -346,8 +346,9 @@ async function run() {
                 
                 if (opp.replaceOld) {
                     const oldDirStr = opp.oldType === 'LONG' ? '買入 (LONG)' : '賣出 (SHORT)';
+                    const oldIntStr = opp.oldInterval ? ` ${opp.oldInterval.toUpperCase()}` : '';
                     messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 勝率: ${(opp.winRate * 100).toFixed(0)}% 🔄\n`;
-                    messageText += `   ⚠️ 說明：此機會之預估勝率優於您進行中的舊交易（舊信號: ${oldDirStr}，進場價: $${formatPrice(opp.oldEntry)}，舊勝率: ${(opp.oldWinRate * 100).toFixed(0)}%），系統已自動為您將舊交易【平倉】並替換為此新機會！\n\n`;
+                    messageText += `   ⚠️ 說明：此機會之預估勝率優於您進行中的舊交易（舊信號: ${oldDirStr}${oldIntStr}，進場價: $${formatPrice(opp.oldEntry)}，舊勝率: ${(opp.oldWinRate * 100).toFixed(0)}%），系統已自動為您將舊交易【平倉】並替換為此新機會！\n\n`;
                 } else {
                     messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 預估勝率: ${(opp.winRate * 100).toFixed(0)}% | 盈虧比: ${opp.rr.toFixed(2)}\n\n`;
                 }
