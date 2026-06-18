@@ -158,7 +158,50 @@ function analyzeSNR(data) {
         }
     }
 
-    return { levels, support, resistance, signal, rr, sl, tp, lastATR };
+    // === 計算綜合勝率評估分數 (winRate) ===
+    let winRate = 0.50; // 基礎勝率 50%
+    if (signal !== 'WATCH') {
+        // 1. 支撐/壓力強度加分 (Level Strength)
+        const level = signal === 'LONG' ? support : resistance;
+        if (level && level.count) {
+            const strengthAdd = Math.min((level.count - 2) * 0.02, 0.08);
+            winRate += strengthAdd;
+        }
+
+        // 2. 順勢度加分 (Trend Alignment)
+        const isEMAUprising = lastEMA > prevEMA;
+        const isEMADeclining = lastEMA < prevEMA;
+        
+        if (signal === 'LONG') {
+            if (lastPrice > lastEMA && isEMAUprising) {
+                winRate += 0.08;
+            } else if (lastPrice < lastEMA && isEMAUprising) {
+                winRate += 0.02;
+            }
+        } else if (signal === 'SHORT') {
+            if (lastPrice < lastEMA && isEMADeclining) {
+                winRate += 0.08;
+            } else if (lastPrice > lastEMA && isEMADeclining) {
+                winRate += 0.02;
+            }
+        }
+
+        // 3. 進場點精確度加分 (Entry Precision)
+        const levelVal = signal === 'LONG' ? support.value : resistance.value;
+        const distToLevel = Math.abs(lastPrice - levelVal);
+        if (lastATR > 0) {
+            const distRatio = distToLevel / lastATR;
+            const precisionAdd = Math.min(Math.max((1.5 - distRatio) * 0.04, -0.02), 0.06);
+            winRate += precisionAdd;
+        }
+    } else {
+        winRate = 0.0;
+    }
+    
+    // 限制最終勝率在 35% ~ 75% 之間
+    winRate = Math.min(Math.max(winRate, 0.35), 0.75);
+
+    return { levels, support, resistance, signal, rr, sl, tp, lastATR, winRate };
 }
 
 // 主執行流程
@@ -235,7 +278,8 @@ async function run() {
                         support: analysis.support,
                         resistance: analysis.resistance,
                         sl: analysis.sl,
-                        tp: analysis.tp
+                        tp: analysis.tp,
+                        winRate: analysis.winRate
                     });
                 }
             } catch (e) {
@@ -259,17 +303,20 @@ async function run() {
 
             if (oldPendingIndex !== -1) {
                 const oldPending = history[oldPendingIndex];
-                if (opp.rr > oldPending.rr) {
+                const oldWinRate = oldPending.winRate !== undefined ? oldPending.winRate : 0.50;
+                const newWinRate = opp.winRate !== undefined ? opp.winRate : 0.50;
+
+                if (newWinRate > oldWinRate) {
                     // 新機會較佳：標記替換、跳過時間去重限制，並記錄舊交易資訊
                     opp.replaceOld = true;
-                    opp.oldRR = oldPending.rr;
+                    opp.oldWinRate = oldWinRate;
                     opp.oldId = oldPending.id;
                     opp.oldType = oldPending.type;
                     opp.oldEntry = oldPending.entry;
                     newOpportunities.push(opp);
                 } else {
                     // 舊交易較佳：維持舊交易，跳過新機會
-                    console.log(`[${opp.symbol}] 舊交易 PENDING 的 rr (${oldPending.rr.toFixed(2)}) 優於或等於新機會 (rr: ${opp.rr.toFixed(2)})，維持舊交易。`);
+                    console.log(`[${opp.symbol}] 舊交易 PENDING 的 winRate (${(oldWinRate * 100).toFixed(0)}%) 優於或等於新機會 (${(newWinRate * 100).toFixed(0)}%)，維持舊交易。`);
                 }
             } else {
                 // 沒有同幣種同週期的 Pending 舊交易，維持原有 10 分鐘去重邏輯
@@ -299,10 +346,10 @@ async function run() {
                 
                 if (opp.replaceOld) {
                     const oldDirStr = opp.oldType === 'LONG' ? '買入 (LONG)' : '賣出 (SHORT)';
-                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 盈虧比: ${opp.rr.toFixed(2)} 🔄\n`;
-                    messageText += `   ⚠️ 說明：此機會之盈虧比優於您進行中的舊交易（舊信號: ${oldDirStr}，進場價: $${formatPrice(opp.oldEntry)}，舊盈虧比: ${opp.oldRR.toFixed(2)}），系統已自動為您將舊交易【平倉】並替換為此新機會！\n\n`;
+                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 勝率: ${(opp.winRate * 100).toFixed(0)}% 🔄\n`;
+                    messageText += `   ⚠️ 說明：此機會之預估勝率優於您進行中的舊交易（舊信號: ${oldDirStr}，進場價: $${formatPrice(opp.oldEntry)}，舊勝率: ${(opp.oldWinRate * 100).toFixed(0)}%），系統已自動為您將舊交易【平倉】並替換為此新機會！\n\n`;
                 } else {
-                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 盈虧比: ${opp.rr.toFixed(2)}\n\n`;
+                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 預估勝率: ${(opp.winRate * 100).toFixed(0)}% | 盈虧比: ${opp.rr.toFixed(2)}\n\n`;
                 }
                 
                 // 6.2 同步寫入歷史紀錄 (比照前端 saveToHistory)
@@ -353,6 +400,7 @@ async function run() {
                         tp: tp,
                         sl: sl,
                         rr: opp.rr,
+                        winRate: opp.winRate !== undefined ? opp.winRate : 0.50,
                         status: 'PENDING'
                     });
                 }

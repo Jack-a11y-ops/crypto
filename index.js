@@ -794,7 +794,8 @@ class SNRTracer {
                         lastPrice,
                         analysis.tp,
                         analysis.sl,
-                        analysis.rr
+                        analysis.rr,
+                        analysis.winRate
                     );
                 }
 
@@ -941,7 +942,50 @@ class SNRTracer {
             }
         }
 
-        return { levels, support, resistance, signal, rr, sl, tp, lastATR };
+        // === 計算綜合勝率評估分數 (winRate) ===
+        let winRate = 0.50; // 基礎勝率 50%
+        if (signal !== 'WATCH') {
+            // 1. 支撐/壓力強度加分 (Level Strength)
+            const level = signal === 'LONG' ? support : resistance;
+            if (level && level.count) {
+                const strengthAdd = Math.min((level.count - 2) * 0.02, 0.08);
+                winRate += strengthAdd;
+            }
+
+            // 2. 順勢度加分 (Trend Alignment)
+            const isEMAUprising = lastEMA > prevEMA;
+            const isEMADeclining = lastEMA < prevEMA;
+            
+            if (signal === 'LONG') {
+                if (lastPrice > lastEMA && isEMAUprising) {
+                    winRate += 0.08;
+                } else if (lastPrice < lastEMA && isEMAUprising) {
+                    winRate += 0.02;
+                }
+            } else if (signal === 'SHORT') {
+                if (lastPrice < lastEMA && isEMADeclining) {
+                    winRate += 0.08;
+                } else if (lastPrice > lastEMA && isEMADeclining) {
+                    winRate += 0.02;
+                }
+            }
+
+            // 3. 進場點精確度加分 (Entry Precision)
+            const levelVal = signal === 'LONG' ? support.value : resistance.value;
+            const distToLevel = Math.abs(lastPrice - levelVal);
+            if (lastATR > 0) {
+                const distRatio = distToLevel / lastATR;
+                const precisionAdd = Math.min(Math.max((1.5 - distRatio) * 0.04, -0.02), 0.06);
+                winRate += precisionAdd;
+            }
+        } else {
+            winRate = 0.0;
+        }
+        
+        // 限制最終勝率在 35% ~ 75% 之間
+        winRate = Math.min(Math.max(winRate, 0.35), 0.75);
+
+        return { levels, support, resistance, signal, rr, sl, tp, lastATR, winRate };
     }
 
     updateUIWithAnalysis(analysis, currentPrice) {
@@ -1109,7 +1153,8 @@ class SNRTracer {
                             rr: analysis.rr,
                             tp: analysis.tp,
                             sl: analysis.sl,
-                            lastPrice: lastPrice
+                            lastPrice: lastPrice,
+                            winRate: analysis.winRate
                         });
                     }
                 } catch (e) {
@@ -1132,10 +1177,13 @@ class SNRTracer {
 
                 if (oldPendingIndex !== -1) {
                     const oldPending = history[oldPendingIndex];
-                    if (opp.rr > oldPending.rr) {
+                    const oldWinRate = oldPending.winRate !== undefined ? oldPending.winRate : 0.50;
+                    const newWinRate = opp.winRate !== undefined ? opp.winRate : 0.50;
+                    
+                    if (newWinRate > oldWinRate) {
                         // 新機會較佳：標記替換、跳過時間去重限制，並記錄舊交易資訊
                         opp.replaceOld = true;
-                        opp.oldRR = oldPending.rr;
+                        opp.oldWinRate = oldWinRate;
                         opp.oldId = oldPending.id;
                         opp.oldType = oldPending.type;
                         opp.oldEntry = oldPending.entry;
@@ -1143,7 +1191,7 @@ class SNRTracer {
                         savedOpportunities.push(opp);
                     } else {
                         // 舊交易較佳：維持舊交易，跳過新機會
-                        console.log(`[${opp.symbol}] 舊交易 PENDING 的 rr (${oldPending.rr.toFixed(2)}) 優於或等於新機會 (rr: ${opp.rr.toFixed(2)})，維持舊交易。`);
+                        console.log(`[${opp.symbol}] 舊交易 PENDING 的 winRate (${(oldWinRate * 100).toFixed(0)}%) 優於或等於新機會 (${(newWinRate * 100).toFixed(0)}%)，維持舊交易。`);
                     }
                 } else {
                     // 沒有同幣種同週期的 Pending 舊交易，維持原有 10 分鐘去重邏輯
@@ -1168,7 +1216,8 @@ class SNRTracer {
                     opp.lastPrice,
                     opp.tp,
                     opp.sl,
-                    opp.rr
+                    opp.rr,
+                    opp.winRate
                 );
             });
 
@@ -1226,6 +1275,7 @@ class SNRTracer {
                                     <span class="signal-badge ${opp.signal === 'LONG' ? 'long' : 'short'}">
                                         ${opp.signal === 'LONG' ? '買入 (LONG)' : '賣出 (SHORT)'}
                                     </span>
+                                    ${opp.winRate !== undefined ? `<div style="font-size: 10px; color: var(--text-muted); margin-top: 5px;">預估勝率: ${(opp.winRate * 100).toFixed(0)}%</div>` : ''}
                                 </td>
                                 <td>
                                     <div class="rr-badge">
@@ -1275,7 +1325,7 @@ class SNRTracer {
         }
     }
 
-    saveToHistory(symbol, interval, type, entry, tp, sl, rr) {
+    saveToHistory(symbol, interval, type, entry, tp, sl, rr, winRate) {
         if (!this.currentUser) return;
         const email = this.currentUser.email;
         const historyKey = `snr_history_${email}`;
@@ -1298,14 +1348,17 @@ class SNRTracer {
         let replaceOld = false;
         if (oldPendingIndex !== -1) {
             const oldPending = history[oldPendingIndex];
-            if (rr > oldPending.rr) {
-                // 新的盈虧比較佳，將舊交易改為 CLOSED，並記錄平倉價格，允許寫入新交易
+            const oldWinRate = oldPending.winRate !== undefined ? oldPending.winRate : 0.50;
+            const newWinRate = winRate !== undefined ? winRate : 0.50;
+
+            if (newWinRate > oldWinRate) {
+                // 新的勝率較佳，將舊交易改為 CLOSED，並記錄平倉價格，允許寫入新交易
                 oldPending.status = 'CLOSED';
                 oldPending.closePrice = entry; // 平倉價即為當前現價（新機會進場點）
                 replaceOld = true;
             } else {
-                // 舊的盈虧比較佳，跳過新機會
-                console.log(`[${symbol}] 舊交易 PENDING 的 rr (${oldPending.rr.toFixed(2)}) 優於或等於新機會 (rr: ${rr.toFixed(2)})，維持舊交易。`);
+                // 舊的勝率較佳，跳過新機會
+                console.log(`[${symbol}] 舊交易 PENDING 的 winRate (${(oldWinRate * 100).toFixed(0)}%) 優於或等於新機會 (${(newWinRate * 100).toFixed(0)}%)，維持舊交易。`);
                 return;
             }
         }
@@ -1332,6 +1385,7 @@ class SNRTracer {
             tp: tp,
             sl: sl,
             rr: rr,
+            winRate: winRate !== undefined ? winRate : 0.50,
             status: 'PENDING'
         };
 
@@ -1484,6 +1538,7 @@ class SNRTracer {
                     </td>
                     <td style="font-family: 'Courier New', monospace; font-weight: 700; font-size: 15px;">
                         ${r.rr.toFixed(2)}
+                        ${r.winRate !== undefined ? `<div style="font-size: 10px; color: var(--text-muted); font-weight: normal; margin-top: 3px;">勝率: ${(r.winRate * 100).toFixed(0)}%</div>` : ''}
                     </td>
                     <td>${statusHTML}</td>
                     <td>
