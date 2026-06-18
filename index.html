@@ -191,6 +191,35 @@
                     </div>
                 </div>
             </div>
+            <!-- 策略參數自定義設定卡片 -->
+            <div class="card strategy-config-card" style="margin-bottom: 20px;">
+                <div class="strategy-config-header" onclick="app.toggleStrategyConfig()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                    <h2 style="font-size: 16px; font-weight: 600; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px;">⚙️ 策略參數自定義與雲端同步設定</h2>
+                    <span id="strategy-config-arrow" style="font-size: 12px; color: var(--text-muted); transition: transform 0.3s;">▼</span>
+                </div>
+                <div id="strategy-config-content" class="strategy-config-content hidden" style="margin-top: 15px;">
+                    <p class="config-tip" style="font-size: 12px; color: var(--text-muted); line-height: 1.5; text-align: left; margin: 0 0 15px 0;">
+                        此處設定將同步儲存至 Firebase 雲端資料庫。GitHub Actions 的背景定時掃描腳本會自動抓取您的專屬設定，並以您的個人化策略進行雷達監控與發信通知。
+                    </p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; width: 100%;">
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">EMA 趨勢過濾週期 (預設 50)</label>
+                            <input type="number" id="strategy-ema-period" placeholder="例如: 50" min="5" max="300" step="1" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">ATR 止損倍數 (預設 1.5)</label>
+                            <input type="number" id="strategy-atr-multiplier" placeholder="例如: 1.5" min="0.1" max="10.0" step="0.1" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">建議槓桿預設風險比例 % (預設 30)</label>
+                            <input type="number" id="strategy-risk-ratio" placeholder="例如: 30" min="5" max="100" step="1" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <button id="save-strategy-config-btn" class="primary-btn-sm" style="width: auto; padding: 8px 20px;">儲存策略設定</button>
+                    </div>
+                </div>
+            </div>
             <div class="card scanner-dashboard">
                 <div class="scanner-header">
                     <div class="scanner-header-text">

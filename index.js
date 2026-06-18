@@ -30,6 +30,7 @@ class SNRTracer {
         this.isDraggingSL = false; // 是否正在拖曳 SL 線
         this.backtestChart = null; // 回測資金曲線圖表
         this.backtestLineSeries = null; // 回測資金折線圖
+        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
 
         this.init();
     }
@@ -408,6 +409,14 @@ class SNRTracer {
             });
         }
 
+        // 儲存策略參數設定按鈕監聽
+        const saveStrategyConfigBtn = document.getElementById('save-strategy-config-btn');
+        if (saveStrategyConfigBtn) {
+            saveStrategyConfigBtn.addEventListener('click', () => {
+                this.saveStrategyConfig();
+            });
+        }
+
         // 歷史 K 線 Modal 關閉監聽
         const closeModalBtn = document.getElementById('close-modal-btn');
         if (closeModalBtn) {
@@ -720,6 +729,9 @@ class SNRTracer {
                     if (cloudData.emailConfig) {
                         localStorage.setItem(`snr_email_config_${user.email}`, JSON.stringify(cloudData.emailConfig));
                     }
+                    if (cloudData.strategyConfig) {
+                        localStorage.setItem(`snr_strategy_config_${user.email}`, JSON.stringify(cloudData.strategyConfig));
+                    }
                 }
             } catch (e) {
                 console.error("Firebase load sync error, falling back to local:", e);
@@ -741,7 +753,8 @@ class SNRTracer {
             }
         }
         
-        // 登入成功後載入 EmailJS 設定
+        // 登入成功後載入自定義策略參數設定與 EmailJS 設定
+        this.initStrategyConfig();
         this.initEmailJS();
         
         // 如果是登入的使用者，且不是訪客，則開啟每 20 分鐘的自動雷達掃描
@@ -909,11 +922,15 @@ class SNRTracer {
     }
 
     // 核心 SNR 運算邏輯 (整合 EMA 趨勢與 ATR 波動度)
-    analyzeSNR(data) {
+    analyzeSNR(data, config = null) {
+        const activeConfig = config || this.strategyConfig || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
+        const emaPeriod = activeConfig.emaPeriod || 50;
+        const atrMultiplier = activeConfig.atrMultiplier || 1.5;
+
         const lastPrice = data[data.length - 1].close;
-        const ema50 = this.calculateEMA(data, 50);
-        const lastEMA = ema50[ema50.length - 1];
-        const prevEMA = ema50[ema50.length - 2];
+        const emaVal = this.calculateEMA(data, emaPeriod);
+        const lastEMA = emaVal[emaVal.length - 1];
+        const prevEMA = emaVal[emaVal.length - 2];
         const lastATR = this.calculateLastATR(data, 14);
 
         const pivots = [];
@@ -952,10 +969,10 @@ class SNRTracer {
         let tp = 0;
 
         // 動態進場距離限制 (ATR-based)
-        const triggerDist = lastATR > 0 ? lastATR * 1.5 : lastPrice * 0.015;
+        const triggerDist = lastATR > 0 ? lastATR * atrMultiplier : lastPrice * (atrMultiplier * 0.01);
         
         // 動態止損緩衝 (ATR-based)
-        const slBuffer = lastATR > 0 ? lastATR * 1.5 : lastPrice * 0.015;
+        const slBuffer = lastATR > 0 ? lastATR * atrMultiplier : lastPrice * (atrMultiplier * 0.01);
 
         if (support && resistance) {
             const distToSupport = lastPrice - support.value;
@@ -1043,7 +1060,7 @@ class SNRTracer {
             const distToLevel = Math.abs(lastPrice - levelVal);
             if (lastATR > 0) {
                 const distRatio = distToLevel / lastATR;
-                const precisionAdd = Math.min(Math.max((1.5 - distRatio) * 0.04, -0.02), 0.06);
+                const precisionAdd = Math.min(Math.max((atrMultiplier - distRatio) * 0.04, -0.02), 0.06);
                 winRate += precisionAdd;
             }
         } else {
@@ -1594,11 +1611,12 @@ class SNRTracer {
                 statusHTML = `<span class="status-pill expired">已過期 ⏳</span>`;
             }
 
-            // 計算建議槓桿倍數 (30% 預期虧損)
+            // 計算建議槓桿倍數 (自定義預期虧損)
+            const riskRatio = (this.strategyConfig && this.strategyConfig.riskRatio) ? this.strategyConfig.riskRatio : 30;
             const slPercent = (Math.abs(r.entry - r.sl) / r.entry) * 100;
             let leverageHTML = '--';
             if (slPercent > 0) {
-                const leverage = 30 / slPercent;
+                const leverage = riskRatio / slPercent;
                 if (leverage > 125) {
                     leverageHTML = `<span class="text-red" style="font-weight: 700;">${leverage.toFixed(1)}x</span><div style="font-size: 10px; color: var(--text-muted);">(超限)</div>`;
                 } else {
@@ -2711,6 +2729,7 @@ class SNRTracer {
         const email = this.currentUser.email;
         const historyKey = `snr_history_${email}`;
         const configKey = `snr_email_config_${email}`;
+        const strategyConfigKey = `snr_strategy_config_${email}`;
         
         let history = [];
         try {
@@ -2726,6 +2745,13 @@ class SNRTracer {
             emailConfig = {};
         }
 
+        let strategyConfig = {};
+        try {
+            strategyConfig = JSON.parse(localStorage.getItem(strategyConfigKey) || '{}');
+        } catch (e) {
+            strategyConfig = {};
+        }
+
         try {
             // Realtime Database 鍵值不允許有點 (.)，將其替換為底線 (_)
             const safeEmail = email.replace(/\./g, '_');
@@ -2734,6 +2760,7 @@ class SNRTracer {
                 lastInterval: this.interval,
                 history: history,
                 emailConfig: emailConfig,
+                strategyConfig: strategyConfig,
                 updatedAt: firebase.database.ServerValue.TIMESTAMP
             });
         } catch (e) {
@@ -2765,6 +2792,107 @@ class SNRTracer {
         if (config.publicKey && typeof emailjs !== 'undefined') {
             emailjs.init(config.publicKey);
         }
+    }
+
+    initStrategyConfig() {
+        if (!this.currentUser) return;
+        const email = this.currentUser.email;
+        const configKey = `snr_strategy_config_${email}`;
+        let config = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
+        try {
+            const localConfig = localStorage.getItem(configKey);
+            if (localConfig) {
+                config = JSON.parse(localConfig);
+            }
+        } catch (e) {
+            config = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
+        }
+
+        this.strategyConfig = {
+            emaPeriod: config.emaPeriod || 50,
+            atrMultiplier: config.atrMultiplier || 1.5,
+            riskRatio: config.riskRatio || 30
+        };
+
+        const emaInput = document.getElementById('strategy-ema-period');
+        const atrInput = document.getElementById('strategy-atr-multiplier');
+        const riskInput = document.getElementById('strategy-risk-ratio');
+
+        if (emaInput) emaInput.value = this.strategyConfig.emaPeriod;
+        if (atrInput) atrInput.value = this.strategyConfig.atrMultiplier;
+        if (riskInput) riskInput.value = this.strategyConfig.riskRatio;
+
+        // 同步槓桿計算器的虧損比例
+        const lossRatioEl = document.getElementById('calc-loss-ratio');
+        if (lossRatioEl) {
+            lossRatioEl.value = this.strategyConfig.riskRatio;
+            this.calculateLeverage();
+        }
+    }
+
+    toggleStrategyConfig() {
+        const content = document.getElementById('strategy-config-content');
+        const arrow = document.getElementById('strategy-config-arrow');
+        if (content && arrow) {
+            content.classList.toggle('hidden');
+            if (content.classList.contains('hidden')) {
+                arrow.style.transform = 'rotate(0deg)';
+            } else {
+                arrow.style.transform = 'rotate(180deg)';
+            }
+        }
+    }
+
+    saveStrategyConfig() {
+        if (!this.currentUser) {
+            alert('請先登入帳戶再儲存設定');
+            return;
+        }
+
+        const emaPeriodVal = document.getElementById('strategy-ema-period').value.trim();
+        const atrMultiplierVal = document.getElementById('strategy-atr-multiplier').value.trim();
+        const riskRatioVal = document.getElementById('strategy-risk-ratio').value.trim();
+
+        const emaPeriod = parseInt(emaPeriodVal);
+        const atrMultiplier = parseFloat(atrMultiplierVal);
+        const riskRatio = parseInt(riskRatioVal);
+
+        if (isNaN(emaPeriod) || emaPeriod < 5 || emaPeriod > 300) {
+            alert('EMA 週期必須是 5 到 300 之間的整數');
+            return;
+        }
+        if (isNaN(atrMultiplier) || atrMultiplier < 0.1 || atrMultiplier > 10.0) {
+            alert('ATR 止損倍數必須是 0.1 到 10.0 之間的數值');
+            return;
+        }
+        if (isNaN(riskRatio) || riskRatio < 5 || riskRatio > 100) {
+            alert('預設風險比例必須是 5% 到 100% 之間的整數');
+            return;
+        }
+
+        const email = this.currentUser.email;
+        const configKey = `snr_strategy_config_${email}`;
+        
+        this.strategyConfig = {
+            emaPeriod,
+            atrMultiplier,
+            riskRatio
+        };
+
+        localStorage.setItem(configKey, JSON.stringify(this.strategyConfig));
+
+        // 更新槓桿預期虧損輸入框的預設值
+        const lossRatioEl = document.getElementById('calc-loss-ratio');
+        if (lossRatioEl) {
+            lossRatioEl.value = riskRatio;
+            this.calculateLeverage();
+        }
+
+        alert('策略設定儲存成功！並已同步至雲端。');
+        this.syncToCloud();
+
+        // 重新執行分析以套用新參數
+        this.fetchAndAnalyze();
     }
 
     toggleEmailConfig() {

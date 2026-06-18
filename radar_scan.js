@@ -74,11 +74,15 @@ function calculateLastATR(data, period = 14) {
 }
 
 // 核心 SNR 分析邏輯 (整合 EMA 趨勢與 ATR 波動度)
-function analyzeSNR(data) {
+function analyzeSNR(data, config = null) {
+    const activeConfig = config || { emaPeriod: 50, atrMultiplier: 1.5 };
+    const emaPeriod = activeConfig.emaPeriod || 50;
+    const atrMultiplier = activeConfig.atrMultiplier || 1.5;
+
     const lastPrice = data[data.length - 1].close;
-    const ema50 = calculateEMA(data, 50);
-    const lastEMA = ema50[ema50.length - 1];
-    const prevEMA = ema50[ema50.length - 2];
+    const emaVal = calculateEMA(data, emaPeriod);
+    const lastEMA = emaVal[emaVal.length - 1];
+    const prevEMA = emaVal[emaVal.length - 2];
     const lastATR = calculateLastATR(data, 14);
 
     const pivots = [];
@@ -117,10 +121,10 @@ function analyzeSNR(data) {
     let tp = 0;
 
     // 動態進場距離限制 (ATR-based)
-    const triggerDist = lastATR > 0 ? lastATR * 1.5 : lastPrice * 0.015;
+    const triggerDist = lastATR > 0 ? lastATR * atrMultiplier : lastPrice * (atrMultiplier * 0.01);
     
     // 動態止損緩衝 (ATR-based)
-    const slBuffer = lastATR > 0 ? lastATR * 1.5 : lastPrice * 0.015;
+    const slBuffer = lastATR > 0 ? lastATR * atrMultiplier : lastPrice * (atrMultiplier * 0.01);
 
     if (support && resistance) {
         const distToSupport = lastPrice - support.value;
@@ -208,7 +212,7 @@ function analyzeSNR(data) {
         const distToLevel = Math.abs(lastPrice - levelVal);
         if (lastATR > 0) {
             const distRatio = distToLevel / lastATR;
-            const precisionAdd = Math.min(Math.max((1.5 - distRatio) * 0.04, -0.02), 0.06);
+            const precisionAdd = Math.min(Math.max((atrMultiplier - distRatio) * 0.04, -0.02), 0.06);
             winRate += precisionAdd;
         }
     } else {
@@ -250,8 +254,13 @@ async function run() {
         const interval = userData.lastInterval || '1h';
         let history = userData.history || [];
         let notified = userData.notified || {};
+        
+        const strategyConfig = userData.strategyConfig || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
+        const emaPeriod = strategyConfig.emaPeriod || 50;
+        const atrMultiplier = strategyConfig.atrMultiplier || 1.5;
+        const riskRatio = strategyConfig.riskRatio || 30;
 
-        console.log(`設定加載成功。掃描週期: ${interval.toUpperCase()} | 接收信箱: ${emailTarget}`);
+        console.log(`設定加載成功。掃描週期: ${interval.toUpperCase()} | 接收信箱: ${emailTarget} | 策略參數: ${emaPeriod} EMA, ${atrMultiplier}x ATR, ${riskRatio}% 風險`);
 
         // 3. 獲取幣安前 50 大成交量 USDT 交易對
         console.log('正在從幣安獲取前 50 大成交量交易對...');
@@ -284,7 +293,7 @@ async function run() {
                 }));
 
                 const lastPrice = chartData[chartData.length - 1].close;
-                const analysis = analyzeSNR(chartData);
+                const analysis = analyzeSNR(chartData, strategyConfig);
 
                 if (analysis.signal !== 'WATCH' && analysis.rr > 1.0) {
                     opportunities.push({
