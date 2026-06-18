@@ -28,6 +28,8 @@ class SNRTracer {
         this.currentDragRecord = null; // 儲存當前點選的歷史紀錄資料
         this.isDraggingTP = false; // 是否正在拖曳 TP 線
         this.isDraggingSL = false; // 是否正在拖曳 SL 線
+        this.backtestChart = null; // 回測資金曲線圖表
+        this.backtestLineSeries = null; // 回測資金折線圖
 
         this.init();
     }
@@ -36,6 +38,7 @@ class SNRTracer {
         this.initFirebase(); // 初始化 Firebase
         this.initChart();
         this.initEquityChart(); // 初始化模擬收益曲線圖表
+        this.initBacktestChart(); // 初始化歷史回測圖表
         this.bindEvents();
         this.initAuth(); // 啟動身份驗證流程
         this.requestNotificationPermission(); // 請求通知權限
@@ -431,6 +434,12 @@ class SNRTracer {
             modalChartContainer.addEventListener('mousemove', (e) => this.handleChartMouseMove(e));
             window.addEventListener('mouseup', (e) => this.handleChartMouseUp(e));
         }
+
+        // 歷史回測按鈕監聽
+        const runBacktestBtn = document.getElementById('run-backtest-btn');
+        if (runBacktestBtn) {
+            runBacktestBtn.addEventListener('click', () => this.runHistoricalBacktest());
+        }
     }
 
     // 切換 Tab 輔助函式
@@ -454,7 +463,7 @@ class SNRTracer {
         const marketInfoEl = document.getElementById('market-info');
         const searchBarEl = document.querySelector('.search-bar');
         
-        if (tabId === 'market-radar-tab' || tabId === 'history-tab' || tabId === 'equity-curve-tab') {
+        if (tabId === 'market-radar-tab' || tabId === 'history-tab' || tabId === 'equity-curve-tab' || tabId === 'backtest-tab') {
             if (marketInfoEl) marketInfoEl.classList.add('hidden');
             if (searchBarEl) searchBarEl.classList.add('hidden');
         } else {
@@ -487,6 +496,20 @@ class SNRTracer {
                 const chartElement = document.getElementById('history-equity-chart');
                 if (this.equityChart && chartElement) {
                     this.equityChart.applyOptions({
+                        width: chartElement.clientWidth,
+                        height: chartElement.clientHeight
+                    });
+                }
+            }, 50);
+        }
+
+        // 切換到回測 Tab 時，自適應圖表大小
+        if (tabId === 'backtest-tab') {
+            this.initBacktestChart();
+            setTimeout(() => {
+                const chartElement = document.getElementById('backtest-equity-chart');
+                if (this.backtestChart && chartElement) {
+                    this.backtestChart.applyOptions({
                         width: chartElement.clientWidth,
                         height: chartElement.clientHeight
                     });
@@ -2126,6 +2149,366 @@ class SNRTracer {
         }
         if (countEl) {
             countEl.innerText = `${settledRecords.length} 筆`;
+        }
+    }
+
+    // 初始化歷史回測資金圖表
+    initBacktestChart() {
+        if (this.backtestChart) return;
+        const chartElement = document.getElementById('backtest-equity-chart');
+        if (!chartElement) return;
+
+        this.backtestChart = LightweightCharts.createChart(chartElement, {
+            layout: {
+                background: { color: 'transparent' },
+                textColor: '#848e9c',
+                fontSize: 11,
+                fontFamily: 'Inter',
+            },
+            grid: {
+                vertLines: { color: 'rgba(197, 203, 206, 0.03)' },
+                horzLines: { color: 'rgba(197, 203, 206, 0.03)' },
+            },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            rightPriceScale: { borderColor: 'rgba(197, 203, 206, 0.08)' },
+            timeScale: {
+                borderColor: 'rgba(197, 203, 206, 0.08)',
+                timeVisible: true
+            },
+        });
+
+        this.backtestLineSeries = this.backtestChart.addSeries(LightweightCharts.LineSeries, {
+            color: '#f0b90b',
+            lineWidth: 3,
+            priceFormat: {
+                type: 'price',
+                precision: 2,
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            if (this.backtestChart && chartElement) {
+                this.backtestChart.applyOptions({
+                    width: chartElement.clientWidth,
+                    height: chartElement.clientHeight
+                });
+            }
+        });
+    }
+
+    // 運行歷史回測模擬引擎
+    async runHistoricalBacktest() {
+        const symbolInput = document.getElementById('backtest-symbol');
+        const intervalSelect = document.getElementById('backtest-interval');
+        const limitSelect = document.getElementById('backtest-limit');
+        const runBtn = document.getElementById('run-backtest-btn');
+
+        if (!symbolInput || !intervalSelect || !limitSelect || !runBtn) return;
+
+        const symbol = symbolInput.value.toUpperCase().trim().replace('/', '');
+        const interval = intervalSelect.value;
+        const limit = parseInt(limitSelect.value);
+
+        if (!symbol) {
+            alert('請輸入有效的交易對，例如 BTCUSDT');
+            return;
+        }
+
+        runBtn.disabled = true;
+        runBtn.innerText = '正在計算中...';
+
+        try {
+            const rawKlines = await this.getBinanceData(symbol, interval, limit);
+            if (!rawKlines || rawKlines.length < 100) {
+                alert('獲取 K 線數據不足 (至少需要 100 根)，請檢查幣種代碼是否正確。');
+                return;
+            }
+
+            const klines = rawKlines.map(d => ({
+                openTime: Number(d.openTime),
+                open: parseFloat(d.open),
+                high: parseFloat(d.high),
+                low: parseFloat(d.low),
+                close: parseFloat(d.close),
+                volume: parseFloat(d.volume)
+            }));
+
+            const trades = [];
+            let activeTrade = null;
+
+            for (let i = 100; i < klines.length; i++) {
+                const currentK = klines[i];
+                const historicalWindow = klines.slice(0, i + 1).map(d => ({
+                    time: d.openTime / 1000,
+                    open: d.open,
+                    high: d.high,
+                    low: d.low,
+                    close: d.close
+                }));
+
+                const analysis = this.analyzeSNR(historicalWindow);
+
+                if (activeTrade) {
+                    if (analysis.signal !== 'WATCH') {
+                        if (analysis.winRate > activeTrade.winRate) {
+                            const closePrice = currentK.close;
+                            const risk = Math.abs(activeTrade.entry - activeTrade.sl);
+                            let pnl = 0;
+                            if (risk > 0) {
+                                pnl = activeTrade.direction === 'LONG'
+                                    ? (closePrice - activeTrade.entry) / risk
+                                    : (activeTrade.entry - closePrice) / risk;
+                            }
+                            
+                            activeTrade.status = 'CLOSED';
+                            activeTrade.closePrice = closePrice;
+                            activeTrade.closeTime = currentK.openTime;
+                            activeTrade.pnl = pnl;
+                            
+                            trades.push({ ...activeTrade });
+
+                            activeTrade = {
+                                symbol: symbol,
+                                direction: analysis.signal,
+                                entry: currentK.close,
+                                tp: analysis.tp,
+                                sl: analysis.sl,
+                                rr: analysis.rr,
+                                winRate: analysis.winRate,
+                                openTime: currentK.openTime,
+                                openIndex: i,
+                                status: 'PENDING'
+                            };
+                            continue;
+                        }
+                    }
+
+                    if (activeTrade.direction === 'LONG') {
+                        if (currentK.low <= activeTrade.sl && currentK.high >= activeTrade.tp) {
+                            activeTrade.status = 'SL';
+                            activeTrade.closePrice = activeTrade.sl;
+                            activeTrade.closeTime = currentK.openTime;
+                            activeTrade.pnl = -1.0;
+                            trades.push({ ...activeTrade });
+                            activeTrade = null;
+                        } else if (currentK.low <= activeTrade.sl) {
+                            activeTrade.status = 'SL';
+                            activeTrade.closePrice = activeTrade.sl;
+                            activeTrade.closeTime = currentK.openTime;
+                            activeTrade.pnl = -1.0;
+                            trades.push({ ...activeTrade });
+                            activeTrade = null;
+                        } else if (currentK.high >= activeTrade.tp) {
+                            activeTrade.status = 'TP';
+                            activeTrade.closePrice = activeTrade.tp;
+                            activeTrade.closeTime = currentK.openTime;
+                            activeTrade.pnl = activeTrade.rr;
+                            trades.push({ ...activeTrade });
+                            activeTrade = null;
+                        }
+                    } else if (activeTrade.direction === 'SHORT') {
+                        if (currentK.high >= activeTrade.sl && currentK.low <= activeTrade.tp) {
+                            activeTrade.status = 'SL';
+                            activeTrade.closePrice = activeTrade.sl;
+                            activeTrade.closeTime = currentK.openTime;
+                            activeTrade.pnl = -1.0;
+                            trades.push({ ...activeTrade });
+                            activeTrade = null;
+                        } else if (currentK.high >= activeTrade.sl) {
+                            activeTrade.status = 'SL';
+                            activeTrade.closePrice = activeTrade.sl;
+                            activeTrade.closeTime = currentK.openTime;
+                            activeTrade.pnl = -1.0;
+                            trades.push({ ...activeTrade });
+                            activeTrade = null;
+                        } else if (currentK.low <= activeTrade.tp) {
+                            activeTrade.status = 'TP';
+                            activeTrade.closePrice = activeTrade.tp;
+                            activeTrade.closeTime = currentK.openTime;
+                            activeTrade.pnl = activeTrade.rr;
+                            trades.push({ ...activeTrade });
+                            activeTrade = null;
+                        }
+                    }
+                } else {
+                    if (analysis.signal === 'LONG' || analysis.signal === 'SHORT') {
+                        activeTrade = {
+                            symbol: symbol,
+                            direction: analysis.signal,
+                            entry: currentK.close,
+                            tp: analysis.tp,
+                            sl: analysis.sl,
+                            rr: analysis.rr,
+                            winRate: analysis.winRate,
+                            openTime: currentK.openTime,
+                            openIndex: i,
+                            status: 'PENDING'
+                        };
+                    }
+                }
+            }
+
+            if (activeTrade) {
+                const finalK = klines[klines.length - 1];
+                const closePrice = finalK.close;
+                const risk = Math.abs(activeTrade.entry - activeTrade.sl);
+                let pnl = 0;
+                if (risk > 0) {
+                    pnl = activeTrade.direction === 'LONG'
+                        ? (closePrice - activeTrade.entry) / risk
+                        : (activeTrade.entry - closePrice) / risk;
+                }
+                activeTrade.status = 'CLOSED';
+                activeTrade.closePrice = closePrice;
+                activeTrade.closeTime = finalK.openTime;
+                activeTrade.pnl = pnl;
+                trades.push({ ...activeTrade });
+                activeTrade = null;
+            }
+
+            this.renderBacktestResults(trades, klines);
+
+        } catch (e) {
+            console.error('Backtest error:', e);
+            alert('回測過程發生錯誤，請檢查您的輸入與網絡。');
+        } finally {
+            runBtn.disabled = false;
+            runBtn.innerText = '開始歷史回測';
+        }
+    }
+
+    // 渲染回測指標與交易明細表格
+    renderBacktestResults(trades, klines) {
+        const total = trades.length;
+        let winCount = 0;
+        let lossCount = 0;
+        let totalPnL = 0;
+
+        trades.forEach(t => {
+            totalPnL += t.pnl;
+            if (t.status === 'TP') {
+                winCount++;
+            } else if (t.status === 'SL') {
+                lossCount++;
+            } else if (t.status === 'CLOSED') {
+                if (t.pnl > 0) {
+                    winCount++;
+                } else {
+                    lossCount++;
+                }
+            }
+        });
+
+        const winRate = total > 0 ? `${((winCount / total) * 100).toFixed(1)}%` : '--';
+        const pnlStr = totalPnL >= 0 ? `+${totalPnL.toFixed(2)} R` : `${totalPnL.toFixed(2)} R`;
+        const pnlColor = totalPnL >= 0 ? 'var(--green)' : 'var(--red)';
+
+        document.getElementById('backtest-stat-total').innerText = `${total} 筆`;
+        document.getElementById('backtest-stat-winrate').innerText = winRate;
+        
+        const pnlEl = document.getElementById('backtest-stat-pnl');
+        if (pnlEl) {
+            pnlEl.innerText = pnlStr;
+            pnlEl.style.color = pnlColor;
+        }
+        
+        document.getElementById('backtest-stat-ratio').innerText = `${winCount} / ${lossCount}`;
+
+        this.updateBacktestChart(trades);
+
+        const detailsList = document.getElementById('backtest-details-list');
+        if (!detailsList) return;
+
+        if (trades.length === 0) {
+            detailsList.innerHTML = `
+                <tr>
+                    <td colspan="9" style="text-align:center; padding: 40px; color: var(--text-muted);">
+                        回測完成。期間策略未產生任何交易訊號。
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        detailsList.innerHTML = trades.map(t => {
+            const formatTime = (ts) => {
+                const date = new Date(ts);
+                return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+            };
+
+            const dirClass = t.direction === 'LONG' ? 'text-green' : 'text-red';
+            const dirLabel = t.direction === 'LONG' ? '買入 (LONG) 🟢' : '賣出 (SHORT) 🔴';
+            
+            let statusHTML = '';
+            let pnlClass = 'text-green';
+            let pnlText = `+${t.pnl.toFixed(2)} R`;
+
+            if (t.pnl < 0) {
+                pnlClass = 'text-red';
+                pnlText = `${t.pnl.toFixed(2)} R`;
+            } else if (t.pnl === 0) {
+                pnlClass = 'text-muted';
+                pnlText = `0.00 R`;
+            }
+
+            if (t.status === 'TP') {
+                statusHTML = `<span class="status-pill tp">已止盈 🎯</span>`;
+            } else if (t.status === 'SL') {
+                statusHTML = `<span class="status-pill sl">已止損 ❌</span>`;
+            } else if (t.status === 'CLOSED') {
+                statusHTML = `<span class="status-pill closed" style="background: rgba(8,160,250,0.1); color: #08a0fa; border: 1px solid rgba(8,160,250,0.2);">已平倉 🔄</span>`;
+            }
+
+            return `
+                <tr>
+                    <td style="font-family: monospace; font-weight: 700;">${t.symbol}</td>
+                    <td class="${dirClass}" style="font-weight: 700;">${dirLabel}</td>
+                    <td style="color: var(--text-muted);">${formatTime(t.openTime)}</td>
+                    <td style="color: var(--text-muted);">${formatTime(t.closeTime)}</td>
+                    <td style="font-family: monospace;">$${this.formatPrice(t.entry)}</td>
+                    <td style="font-family: monospace;">$${this.formatPrice(t.closePrice)}</td>
+                    <td style="font-weight: 700; color: var(--accent-color);">${(t.winRate * 100).toFixed(0)}%</td>
+                    <td>${statusHTML}</td>
+                    <td class="${pnlClass}" style="font-family: monospace; font-weight: 700; font-size: 15px;">${pnlText}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // 更新回測資金曲線圖
+    updateBacktestChart(trades) {
+        if (!this.backtestLineSeries) return;
+
+        const settledTrades = [...trades].sort((a, b) => a.closeTime - b.closeTime);
+        const chartPoints = [];
+        let currentPnL = 0;
+
+        if (settledTrades.length > 0) {
+            const firstTime = Math.floor(settledTrades[0].openTime / 1000) - 3600;
+            chartPoints.push({ time: firstTime, value: 0.00 });
+        } else {
+            chartPoints.push({ time: Math.floor(Date.now() / 1000) - 3600, value: 0.00 });
+        }
+
+        let lastTime = chartPoints[0].time;
+        settledTrades.forEach(t => {
+            currentPnL += t.pnl;
+            let closeTimeSec = Math.floor(t.closeTime / 1000);
+            if (closeTimeSec <= lastTime) {
+                closeTimeSec = lastTime + 1;
+            }
+            lastTime = closeTimeSec;
+
+            chartPoints.push({
+                time: closeTimeSec,
+                value: parseFloat(currentPnL.toFixed(2))
+            });
+        });
+
+        this.backtestLineSeries.setData(chartPoints);
+        
+        if (this.backtestChart && chartPoints.length > 0) {
+            this.backtestChart.timeScale().fitContent();
         }
     }
 

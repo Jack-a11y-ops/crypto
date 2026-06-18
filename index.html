@@ -61,6 +61,7 @@
             <button class="tab-btn" data-tab="market-radar-tab">全市場雷達掃描</button>
             <button class="tab-btn active" data-tab="history-tab">歷史分析紀錄</button>
             <button class="tab-btn" data-tab="equity-curve-tab">模擬收益曲線</button>
+            <button class="tab-btn" data-tab="backtest-tab">策略歷史回測</button>
         </nav>
 
         <!-- Tab 1: 單幣詳細分析 -->
@@ -359,6 +360,94 @@
 
                 <div class="history-chart-card" style="margin-top: 0; border: none; background: transparent; padding: 0;">
                     <div id="history-equity-chart" class="history-equity-chart-container" style="height: 380px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 5: 策略歷史回測 -->
+        <div id="backtest-tab" class="tab-content">
+            <div class="card scanner-dashboard">
+                <div class="scanner-header">
+                    <div class="scanner-header-text">
+                        <h2>策略歷史回測 (SNR Backtesting Engine)</h2>
+                        <p class="subtitle">輸入指定幣種、時間週期與回測長度，從幣安拉取歷史 K 線數據進行回測模擬。交易邏輯包含 50 EMA、14 ATR 趨勢過濾、支撐阻力以及勝率平倉替換。</p>
+                    </div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 13px; color: var(--text-muted);">幣種:</span>
+                            <input type="text" id="backtest-symbol" value="BTCUSDT" class="premium-select" style="width: 120px; padding: 6px 12px; height: 36px; line-height: 24px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05); color: var(--text-main); font-family: monospace;" placeholder="例如: BTCUSDT">
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 13px; color: var(--text-muted);">週期:</span>
+                            <select id="backtest-interval" class="premium-select" style="height: 36px;">
+                                <option value="5m">5M</option>
+                                <option value="15m" selected>15M</option>
+                                <option value="1h">1H</option>
+                                <option value="4h">4H</option>
+                                <option value="1d">1D</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 13px; color: var(--text-muted);">數量:</span>
+                            <select id="backtest-limit" class="premium-select" style="height: 36px;">
+                                <option value="500">500 根</option>
+                                <option value="1000" selected>1000 根</option>
+                            </select>
+                        </div>
+                        <button id="run-backtest-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px;">開始歷史回測</button>
+                    </div>
+                </div>
+
+                <div class="scanner-stats" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-top: 20px;">
+                    <div class="stat-card">
+                        <span class="stat-label">回測總交易</span>
+                        <span class="stat-value" id="backtest-stat-total">0 筆</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">策略實際勝率</span>
+                        <span class="stat-value highlight" id="backtest-stat-winrate">--</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">累計收益 (R值)</span>
+                        <span class="stat-value highlight" id="backtest-stat-pnl" style="color: var(--text-green);">+0.00 R</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">盈利 / 虧損</span>
+                        <span class="stat-value" id="backtest-stat-ratio" style="color: var(--text-main);">0 / 0</span>
+                    </div>
+                </div>
+
+                <div class="history-chart-card" style="margin-top: 20px; border: none; background: transparent; padding: 0;">
+                    <h3 style="margin-bottom: 10px; font-weight: 600; color: var(--text-main);">回測模擬累計收益曲線 (Equity Curve)</h3>
+                    <div id="backtest-equity-chart" class="history-equity-chart-container" style="height: 380px;"></div>
+                </div>
+
+                <div class="radar-table-container" style="margin-top: 30px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                    <h3 style="margin-bottom: 15px; font-weight: 600; color: var(--text-main);">回測交易明細</h3>
+                    <div style="overflow-x: auto;">
+                        <table class="premium-radar-table">
+                            <thead>
+                                <tr>
+                                    <th>幣種</th>
+                                    <th>方向</th>
+                                    <th>開倉時間</th>
+                                    <th>平倉時間</th>
+                                    <th>開倉價</th>
+                                    <th>平倉價</th>
+                                    <th>預估勝率</th>
+                                    <th>最終狀態</th>
+                                    <th>收益 (R值)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="backtest-details-list">
+                                <tr>
+                                    <td colspan="9" style="text-align:center; padding: 40px; color: var(--text-muted);">
+                                        請在上方填寫參數，並點擊「開始歷史回測」以運行回測引擎。
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

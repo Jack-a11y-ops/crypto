@@ -1362,3 +1362,10 @@ body {
     color: var(--accent-color);
     opacity: 1;
 }
+
+/* 策略歷史回測分頁佈局 */
+.backtest-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
