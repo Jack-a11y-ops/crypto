@@ -20,6 +20,9 @@ class SNRTracer {
         this.alertCooldowns = {}; // 記錄各幣種臨界警報的冷卻時間戳記
         this.autoScanTimer = null; // 自動雷達掃描計時器
         this.notifiedOpportunities = {}; // 記錄已通知過的交易機會，防重複發信
+        this.modalChart = null; // 歷史複盤 Modal 圖表實例
+        this.modalCandlestickSeries = null;
+        this.modalPriceLines = [];
 
         this.init();
     }
@@ -396,6 +399,25 @@ class SNRTracer {
                 this.sendTestEmail();
             });
         }
+
+        // 歷史 K 線 Modal 關閉監聽
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        if (closeModalBtn) {
+            closeModalBtn.addEventListener('click', () => this.closeHistoryChartModal());
+        }
+        const modalOverlay = document.getElementById('history-chart-modal');
+        if (modalOverlay) {
+            modalOverlay.addEventListener('click', (e) => {
+                if (e.target === modalOverlay) {
+                    this.closeHistoryChartModal();
+                }
+            });
+        }
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeHistoryChartModal();
+            }
+        });
     }
 
     // 切換 Tab 輔助函式
@@ -1345,9 +1367,10 @@ class SNRTracer {
             return `
                 <tr>
                     <td style="font-family: monospace; color: var(--text-muted); font-size: 13px;">${r.timeStr}</td>
-                    <td>
-                        <span class="symbol-name">${r.symbol.replace('USDT', '')}</span>
+                    <td onclick="app.openHistoryChartModal(${r.id})" class="clickable-symbol">
+                        <span class="symbol-name" style="color: var(--accent-color); font-weight: bold;">${r.symbol.replace('USDT', '')}</span>
                         <span style="color: var(--text-muted); font-size: 12px; margin-left: 5px;">/USDT (${r.interval.toUpperCase()})</span>
+                        <span class="symbol-icon">📈</span>
                     </td>
                     <td>
                         <span class="${typeClass}" style="font-weight: 700;">
@@ -1404,6 +1427,184 @@ class SNRTracer {
                 // 異步同步至雲端資料庫
                 this.syncToCloud();
             }
+        }
+    }
+
+    async openHistoryChartModal(id) {
+        if (!this.currentUser) return;
+        const email = this.currentUser.email;
+        const historyKey = `snr_history_${email}`;
+        let history = [];
+        try {
+            history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+        } catch (e) {
+            history = [];
+        }
+
+        const record = history.find(r => r.id === id);
+        if (!record) return;
+
+        // 1. 填入基本資訊與顯示 Modal
+        document.getElementById('modal-title').innerText = `${record.symbol.replace('USDT', '')}/USDT (${record.interval.toUpperCase()}) 歷史回顧`;
+        
+        const typeBadge = document.getElementById('modal-type');
+        typeBadge.innerText = record.type === 'LONG' ? '買入 (LONG) 📈' : '賣出 (SHORT) 📉';
+        typeBadge.className = `info-badge ${record.type === 'LONG' ? 'long' : 'short'}`;
+
+        document.getElementById('modal-entry').innerText = `$${this.formatPrice(record.entry)}`;
+        document.getElementById('modal-tp').innerText = `$${this.formatPrice(record.tp)}`;
+        document.getElementById('modal-sl').innerText = `$${this.formatPrice(record.sl)}`;
+        document.getElementById('modal-current').innerText = '載入中...';
+
+        const modal = document.getElementById('history-chart-modal');
+        modal.classList.remove('hidden');
+
+        // 2. 初始化 K 線圖表
+        const chartContainer = document.getElementById('modal-tv-chart');
+        chartContainer.innerHTML = ''; // 清空容器
+
+        this.modalChart = LightweightCharts.createChart(chartContainer, {
+            layout: {
+                background: { color: 'transparent' },
+                textColor: '#848e9c',
+                fontSize: 12,
+                fontFamily: 'Inter',
+            },
+            grid: {
+                vertLines: { color: 'rgba(197, 203, 206, 0.05)' },
+                horzLines: { color: 'rgba(197, 203, 206, 0.05)' },
+            },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            rightPriceScale: { borderColor: 'rgba(197, 203, 206, 0.1)' },
+            timeScale: {
+                borderColor: 'rgba(197, 203, 206, 0.1)',
+                timeVisible: true
+            },
+        });
+
+        this.modalCandlestickSeries = this.modalChart.addSeries(LightweightCharts.CandlestickSeries, {
+            upColor: '#0ecb81',
+            downColor: '#f6465d',
+            borderVisible: false,
+            wickUpColor: '#0ecb81',
+            wickDownColor: '#f6465d',
+            priceFormat: {
+                type: 'price',
+                precision: 8,
+                minMove: 0.00000001,
+            }
+        });
+
+        // 自適應調整尺寸
+        this.modalChart.applyOptions({
+            width: chartContainer.clientWidth,
+            height: chartContainer.clientHeight
+        });
+
+        // 3. 獲取當時 K 線資料
+        // 計算 interval 對應的毫秒數，往前退 30 根 K 線作為查詢起點
+        let intervalMs = 60 * 1000;
+        if (record.interval === '5m') intervalMs = 5 * 60 * 1000;
+        else if (record.interval === '15m') intervalMs = 15 * 60 * 1000;
+        else if (record.interval === '1h') intervalMs = 60 * 60 * 1000;
+        else if (record.interval === '4h') intervalMs = 4 * 60 * 60 * 1000;
+        else if (record.interval === '1d') intervalMs = 24 * 60 * 60 * 1000;
+
+        const queryStartTime = record.id - 30 * intervalMs;
+
+        try {
+            const url = `https://api.binance.com/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=150`;
+            const response = await fetch(url);
+            const klines = await response.json();
+
+            if (!Array.isArray(klines) || klines.length === 0) {
+                chartContainer.innerHTML = '<div style="text-align:center; padding: 100px; color: var(--text-muted);">無法載入 K 線資料</div>';
+                return;
+            }
+
+            const chartData = klines.map(d => ({
+                time: d[0] / 1000,
+                open: parseFloat(d[1]),
+                high: parseFloat(d[2]),
+                low: parseFloat(d[3]),
+                close: parseFloat(d[4])
+            }));
+
+            this.modalCandlestickSeries.setData(chartData);
+
+            const lastPrice = chartData[chartData.length - 1].close;
+            document.getElementById('modal-current').innerText = `$${this.formatPrice(lastPrice)}`;
+
+            // 4. 繪製輔助價格線 (Entry, TP, SL, CurrentPrice)
+            this.modalPriceLines = [];
+
+            // 4.1 進場價 (藍虛線)
+            const entryLine = this.modalCandlestickSeries.createPriceLine({
+                price: record.entry,
+                color: 'rgba(56, 139, 253, 0.85)',
+                lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: `進場價 $${this.formatPrice(record.entry)}`,
+            });
+            this.modalPriceLines.push(entryLine);
+
+            // 4.2 止盈目標 (綠實線)
+            const tpLine = this.modalCandlestickSeries.createPriceLine({
+                price: record.tp,
+                color: 'rgba(14, 203, 129, 0.85)',
+                lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Solid,
+                axisLabelVisible: true,
+                title: `🎯 止盈位 $${this.formatPrice(record.tp)}`,
+            });
+            this.modalPriceLines.push(tpLine);
+
+            // 4.3 止損防守 (紅實線)
+            const slLine = this.modalCandlestickSeries.createPriceLine({
+                price: record.sl,
+                color: 'rgba(246, 70, 93, 0.85)',
+                lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Solid,
+                axisLabelVisible: true,
+                title: `❌ 止損位 $${this.formatPrice(record.sl)}`,
+            });
+            this.modalPriceLines.push(slLine);
+
+            // 4.4 最新現價 (黃實線)
+            const currentLine = this.modalCandlestickSeries.createPriceLine({
+                price: lastPrice,
+                color: 'rgba(240, 185, 11, 0.85)',
+                lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Solid,
+                axisLabelVisible: true,
+                title: `現價 $${this.formatPrice(lastPrice)}`,
+            });
+            this.modalPriceLines.push(currentLine);
+
+        } catch (err) {
+            console.error("Load modal chart klines error:", err);
+            chartContainer.innerHTML = '<div style="text-align:center; padding: 100px; color: var(--red);">載入市場數據失敗，請檢查網路連接。</div>';
+        }
+    }
+
+    closeHistoryChartModal() {
+        const modal = document.getElementById('history-chart-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+
+        // 銷毀圖表實例釋放記憶體
+        if (this.modalChart) {
+            try {
+                this.modalChart.removeSeries(this.modalCandlestickSeries);
+                this.modalChart = null;
+                this.modalCandlestickSeries = null;
+                this.modalPriceLines = [];
+            } catch (e) {
+                console.warn("Destroy modal chart error:", e);
+            }
+            document.getElementById('modal-tv-chart').innerHTML = '';
         }
     }
 

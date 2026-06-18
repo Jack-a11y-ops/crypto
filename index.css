@@ -1223,3 +1223,142 @@ body {
     border-radius: 8px;
     overflow: hidden;
 }
+
+/* 歷史 K 線 Modal 樣式 */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(11, 14, 17, 0.85);
+    backdrop-filter: blur(8px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 3000;
+    animation: fadeIn 0.25s ease-out;
+}
+
+.modal-overlay.hidden {
+    display: none !important;
+}
+
+.modal-card {
+    background: var(--card-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    width: 90%;
+    max-width: 900px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    padding: 25px;
+    border-top: 2px solid var(--accent-color);
+    animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 15px;
+}
+
+.modal-header h2 {
+    font-family: var(--font-heading);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 28px;
+    cursor: pointer;
+    transition: color 0.2s;
+    line-height: 1;
+}
+
+.close-btn:hover {
+    color: var(--red);
+}
+
+.modal-info-summary {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 5px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.modal-info-summary .info-tag {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    padding: 5px 12px;
+    border-radius: 6px;
+}
+
+.modal-info-summary .info-tag.highlight {
+    color: var(--accent-color);
+    border-color: rgba(240, 185, 11, 0.2);
+}
+
+.info-badge {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.info-badge.long {
+    background: rgba(14, 203, 129, 0.1);
+    color: var(--green);
+    border: 1px solid rgba(14, 203, 129, 0.2);
+}
+
+.info-badge.short {
+    background: rgba(246, 70, 93, 0.1);
+    color: var(--red);
+    border: 1px solid rgba(246, 70, 93, 0.2);
+}
+
+.modal-chart-container {
+    width: 100%;
+    height: 450px;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+/* 可點擊幣種樣式 */
+.clickable-symbol {
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.clickable-symbol:hover .symbol-name {
+    text-decoration: underline;
+    color: var(--accent-color) !important;
+}
+
+.clickable-symbol .symbol-icon {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: 4px;
+    opacity: 0.7;
+    transition: transform 0.2s;
+}
+
+.clickable-symbol:hover .symbol-icon {
+    transform: scale(1.2);
+    color: var(--accent-color);
+    opacity: 1;
+}

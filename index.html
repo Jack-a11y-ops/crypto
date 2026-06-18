@@ -406,6 +406,26 @@
         </div>
     </div>
 
+    <!-- 歷史紀錄 K 線複盤對話框 (Modal) -->
+    <div id="history-chart-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2 id="modal-title">-- 歷史回顧</h2>
+                <button id="close-modal-btn" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-info-summary">
+                    <span class="info-badge" id="modal-type">--</span>
+                    <span class="info-tag">進場: <span id="modal-entry" style="font-family: monospace;">--</span></span>
+                    <span class="info-tag text-green">止盈: <span id="modal-tp" style="font-family: monospace;">--</span></span>
+                    <span class="info-tag text-red">止損: <span id="modal-sl" style="font-family: monospace;">--</span></span>
+                    <span class="info-tag highlight">現價: <span id="modal-current" style="font-family: monospace;">--</span></span>
+                </div>
+                <div id="modal-tv-chart" class="modal-chart-container"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase SDK (v8 Compatibility Mode) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
