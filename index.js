@@ -742,15 +742,13 @@ class SNRTracer {
 
                 // 如果不是網頁剛開啟時的自動初始化分析，且有產生明確信號，才寫入歷史分析紀錄
                 if (!isInitial && analysis && (analysis.signal === 'LONG' || analysis.signal === 'SHORT')) {
-                    const tp = analysis.signal === 'LONG' ? analysis.resistance.value : analysis.support.value;
-                    const sl = analysis.signal === 'LONG' ? analysis.support.value * 0.985 : analysis.resistance.value * 1.015;
                     this.saveToHistory(
                         this.symbol,
                         this.interval,
                         analysis.signal,
                         lastPrice,
-                        tp,
-                        sl,
+                        analysis.tp,
+                        analysis.sl,
                         analysis.rr
                     );
                 }
@@ -778,9 +776,49 @@ class SNRTracer {
         }));
     }
 
-    // 核心 SNR 運算邏輯 (封裝以便批量調用)
+    calculateEMA(data, period = 50) {
+        const k = 2 / (period + 1);
+        const emaArr = [];
+        let ema = data[0].close;
+        emaArr.push(ema);
+        for (let i = 1; i < data.length; i++) {
+            ema = (data[i].close * k) + (ema * (1 - k));
+            emaArr.push(ema);
+        }
+        return emaArr;
+    }
+
+    calculateLastATR(data, period = 14) {
+        if (data.length < period) return 0;
+        const trArr = [];
+        trArr.push(data[0].high - data[0].low);
+        for (let i = 1; i < data.length; i++) {
+            const tr = Math.max(
+                data[i].high - data[i].low,
+                Math.abs(data[i].high - data[i - 1].close),
+                Math.abs(data[i].low - data[i - 1].close)
+            );
+            trArr.push(tr);
+        }
+        let atr = 0;
+        for (let i = 0; i < period; i++) {
+            atr += trArr[i];
+        }
+        atr = atr / period;
+        for (let i = period; i < data.length; i++) {
+            atr = (atr * (period - 1) + trArr[i]) / period;
+        }
+        return atr;
+    }
+
+    // 核心 SNR 運算邏輯 (整合 EMA 趨勢與 ATR 波動度)
     analyzeSNR(data) {
         const lastPrice = data[data.length - 1].close;
+        const ema50 = this.calculateEMA(data, 50);
+        const lastEMA = ema50[ema50.length - 1];
+        const prevEMA = ema50[ema50.length - 2];
+        const lastATR = this.calculateLastATR(data, 14);
+
         const pivots = [];
         for (let i = 2; i < data.length - 2; i++) {
             if (data[i].high > data[i - 1].high && data[i].high > data[i - 2].high &&
@@ -793,7 +831,8 @@ class SNRTracer {
             }
         }
 
-        const threshold = lastPrice * 0.006;
+        // 動態合併閾值 (ATR-based)
+        const threshold = lastATR > 0 ? lastATR * 0.8 : lastPrice * 0.006;
         let levels = [];
         pivots.forEach(p => {
             let found = levels.find(l => Math.abs(p.value - l.value) < threshold);
@@ -812,25 +851,56 @@ class SNRTracer {
 
         let signal = 'WATCH';
         let rr = 0;
+        let sl = 0;
+        let tp = 0;
+
+        // 動態進場距離限制 (ATR-based)
+        const triggerDist = lastATR > 0 ? lastATR * 1.5 : lastPrice * 0.015;
+        
+        // 動態止損緩衝 (ATR-based)
+        const slBuffer = lastATR > 0 ? lastATR * 1.5 : lastPrice * 0.015;
 
         if (support && resistance) {
-            const distToSupport = (lastPrice - support.value) / lastPrice;
-            const distToResistance = (resistance.value - lastPrice) / lastPrice;
+            const distToSupport = lastPrice - support.value;
+            const distToResistance = resistance.value - lastPrice;
 
-            if (distToSupport < 0.015) {
+            if (distToSupport < triggerDist) {
                 signal = 'LONG';
-                rr = (resistance.value - lastPrice) / (lastPrice - support.value * 0.985);
-            } else if (distToResistance < 0.015) {
+                sl = support.value - slBuffer;
+                tp = resistance.value;
+                rr = (tp - lastPrice) / (lastPrice - sl);
+            } else if (distToResistance < triggerDist) {
                 signal = 'SHORT';
-                rr = (lastPrice - support.value) / (resistance.value * 1.015 - lastPrice);
+                sl = resistance.value + slBuffer;
+                tp = support.value;
+                rr = (lastPrice - tp) / (sl - lastPrice);
             }
         }
 
-        return { levels, support, resistance, signal, rr };
+        // 趨勢過濾 (EMA-based)
+        if (signal === 'LONG') {
+            // 如果是空頭趨勢 (價格低於 EMA 且 EMA 下降)，過濾 LONG 訊號
+            if (lastPrice < lastEMA && lastEMA < prevEMA) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        } else if (signal === 'SHORT') {
+            // 如果是多頭趨勢 (價格高於 EMA 且 EMA 上升)，過濾 SHORT 訊號
+            if (lastPrice > lastEMA && lastEMA > prevEMA) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        }
+
+        return { levels, support, resistance, signal, rr, sl, tp, lastATR };
     }
 
     updateUIWithAnalysis(analysis, currentPrice) {
-        const { levels, support, resistance, signal } = analysis;
+        const { levels, support, resistance, signal, tp, sl } = analysis;
 
         // 1. 清除圖表上舊的價格輔助線
         if (this.priceLines) {
@@ -864,10 +934,7 @@ class SNRTracer {
         }
 
         // 3. 繪製交易訊號的 TP 與 SL (若有進場訊號)
-        if (signal !== 'WATCH' && support && resistance) {
-            const tp = signal === 'LONG' ? resistance.value : support.value;
-            const sl = signal === 'LONG' ? support.value * 0.985 : resistance.value * 1.015;
-
+        if (signal !== 'WATCH' && support && resistance && tp && sl) {
             const tpLine = this.candlestickSeries.createPriceLine({
                 price: tp,
                 color: 'rgba(240, 185, 11, 0.85)',
@@ -917,10 +984,9 @@ class SNRTracer {
         const recommendSlEl = document.getElementById('calc-recommend-sl');
         const customSlInput = document.getElementById('calc-custom-sl');
 
-        if (signal !== 'WATCH') {
-            const sl = signal === 'LONG' ? support.value * 0.985 : resistance.value * 1.015;
+        if (signal !== 'WATCH' && tp && sl) {
             entryPrice.innerText = `$${this.formatPrice(currentPrice)}`;
-            tpPrice.innerText = `$${this.formatPrice(signal === 'LONG' ? resistance.value : support.value)}`;
+            tpPrice.innerText = `$${this.formatPrice(tp)}`;
             slPrice.innerText = `$${this.formatPrice(sl)}`;
             reason.innerText = `檢測到有效 SNR 結構。當前盈虧比 (RR) 為 ${analysis.rr.toFixed(2)}。價格正處於關鍵${signal === 'LONG' ? '支撐' : '壓力'}位附近，符合進場條件。`;
             
@@ -982,13 +1048,12 @@ class SNRTracer {
                     // 過濾：信號明確且盈虧比 > 1
                     if (analysis.signal !== 'WATCH' && analysis.rr > 1) {
                         const lastPrice = chartData[chartData.length - 1].close;
-                        const tp = analysis.signal === 'LONG' ? analysis.resistance.value : analysis.support.value;
-                        const sl = analysis.signal === 'LONG' ? analysis.support.value * 0.985 : analysis.resistance.value * 1.015;
-
                         opportunities.push({
                             symbol: item.symbol,
                             signal: analysis.signal,
-                            rr: analysis.rr
+                            rr: analysis.rr,
+                            tp: analysis.tp,
+                            sl: analysis.sl
                         });
 
                         // 將掃描出的機會寫入歷史紀錄 (此時只存 localStorage，最後統一同步至雲端)
@@ -997,8 +1062,8 @@ class SNRTracer {
                             this.interval,
                             analysis.signal,
                             lastPrice,
-                            tp,
-                            sl,
+                            analysis.tp,
+                            analysis.sl,
                             analysis.rr
                         );
                     }

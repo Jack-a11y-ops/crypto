@@ -30,8 +30,57 @@ function formatPrice(price) {
     return price.toFixed(8);
 }
 
-// 核心 SNR 分析邏輯
-function analyzeSNR(data, lastPrice) {
+// 指數移動平均線 (EMA) 計算
+function calculateEMA(data, period = 50) {
+    const k = 2 / (period + 1);
+    const emaArr = [];
+    let ema = data[0].close;
+    emaArr.push(ema);
+    for (let i = 1; i < data.length; i++) {
+        ema = (data[i].close * k) + (ema * (1 - k));
+        emaArr.push(ema);
+    }
+    return emaArr;
+}
+
+// 平均真實波幅 (ATR) 計算 (獲取最後一根 ATR 波動值)
+function calculateLastATR(data, period = 14) {
+    if (data.length < period) return 0;
+    
+    // 1. 計算 TR
+    const trArr = [];
+    trArr.push(data[0].high - data[0].low);
+    for (let i = 1; i < data.length; i++) {
+        const tr = Math.max(
+            data[i].high - data[i].low,
+            Math.abs(data[i].high - data[i - 1].close),
+            Math.abs(data[i].low - data[i - 1].close)
+        );
+        trArr.push(tr);
+    }
+
+    // 2. 初始 ATR
+    let atr = 0;
+    for (let i = 0; i < period; i++) {
+        atr += trArr[i];
+    }
+    atr = atr / period;
+
+    // 3. 滾動 ATR
+    for (let i = period; i < data.length; i++) {
+        atr = (atr * (period - 1) + trArr[i]) / period;
+    }
+    return atr;
+}
+
+// 核心 SNR 分析邏輯 (整合 EMA 趨勢與 ATR 波動度)
+function analyzeSNR(data) {
+    const lastPrice = data[data.length - 1].close;
+    const ema50 = calculateEMA(data, 50);
+    const lastEMA = ema50[ema50.length - 1];
+    const prevEMA = ema50[ema50.length - 2];
+    const lastATR = calculateLastATR(data, 14);
+
     const pivots = [];
     for (let i = 2; i < data.length - 2; i++) {
         if (data[i].high > data[i - 1].high && data[i].high > data[i - 2].high &&
@@ -44,7 +93,8 @@ function analyzeSNR(data, lastPrice) {
         }
     }
 
-    const threshold = lastPrice * 0.006;
+    // 動態合併閾值 (ATR-based)
+    const threshold = lastATR > 0 ? lastATR * 0.8 : lastPrice * 0.006;
     let levels = [];
     pivots.forEach(p => {
         let found = levels.find(l => Math.abs(p.value - l.value) < threshold);
@@ -63,21 +113,52 @@ function analyzeSNR(data, lastPrice) {
 
     let signal = 'WATCH';
     let rr = 0;
+    let sl = 0;
+    let tp = 0;
+
+    // 動態進場距離限制 (ATR-based)
+    const triggerDist = lastATR > 0 ? lastATR * 1.5 : lastPrice * 0.015;
+    
+    // 動態止損緩衝 (ATR-based)
+    const slBuffer = lastATR > 0 ? lastATR * 1.5 : lastPrice * 0.015;
 
     if (support && resistance) {
-        const distToSupport = (lastPrice - support.value) / lastPrice;
-        const distToResistance = (resistance.value - lastPrice) / lastPrice;
+        const distToSupport = lastPrice - support.value;
+        const distToResistance = resistance.value - lastPrice;
 
-        if (distToSupport < 0.015) {
+        if (distToSupport < triggerDist) {
             signal = 'LONG';
-            rr = (resistance.value - lastPrice) / (lastPrice - support.value * 0.985);
-        } else if (distToResistance < 0.015) {
+            sl = support.value - slBuffer;
+            tp = resistance.value;
+            rr = (tp - lastPrice) / (lastPrice - sl);
+        } else if (distToResistance < triggerDist) {
             signal = 'SHORT';
-            rr = (lastPrice - support.value) / (resistance.value * 1.015 - lastPrice);
+            sl = resistance.value + slBuffer;
+            tp = support.value;
+            rr = (lastPrice - tp) / (sl - lastPrice);
         }
     }
 
-    return { levels, support, resistance, signal, rr };
+    // 趨勢過濾 (EMA-based)
+    if (signal === 'LONG') {
+        // 如果是空頭趨勢 (價格低於 EMA 且 EMA 下降)，過濾 LONG 訊號
+        if (lastPrice < lastEMA && lastEMA < prevEMA) {
+            signal = 'WATCH';
+            rr = 0;
+            sl = 0;
+            tp = 0;
+        }
+    } else if (signal === 'SHORT') {
+        // 如果是多頭趨勢 (價格高於 EMA 且 EMA 上升)，過濾 SHORT 訊號
+        if (lastPrice > lastEMA && lastEMA > prevEMA) {
+            signal = 'WATCH';
+            rr = 0;
+            sl = 0;
+            tp = 0;
+        }
+    }
+
+    return { levels, support, resistance, signal, rr, sl, tp, lastATR };
 }
 
 // 主執行流程
@@ -143,7 +224,7 @@ async function run() {
                 }));
 
                 const lastPrice = chartData[chartData.length - 1].close;
-                const analysis = analyzeSNR(chartData, lastPrice);
+                const analysis = analyzeSNR(chartData);
 
                 if (analysis.signal !== 'WATCH' && analysis.rr > 1.0) {
                     opportunities.push({
@@ -152,7 +233,9 @@ async function run() {
                         rr: analysis.rr,
                         lastPrice: lastPrice,
                         support: analysis.support,
-                        resistance: analysis.resistance
+                        resistance: analysis.resistance,
+                        sl: analysis.sl,
+                        tp: analysis.tp
                     });
                 }
             } catch (e) {
@@ -223,8 +306,8 @@ async function run() {
                 }
                 
                 // 6.2 同步寫入歷史紀錄 (比照前端 saveToHistory)
-                const tp = opp.signal === 'LONG' ? opp.resistance.value : opp.support.value;
-                const sl = opp.signal === 'LONG' ? opp.support.value * 0.985 : opp.resistance.value * 1.015;
+                const tp = opp.tp;
+                const sl = opp.sl;
 
                 // 如果是替換舊交易，我們將舊交易的 status 標記為 CLOSED
                 if (opp.replaceOld && opp.oldId) {
