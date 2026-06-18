@@ -464,10 +464,6 @@ class SNRTracer {
         
         // 切換回單幣詳細分析時，重新調整 TradingView 圖表大小以填滿容器
         if (tabId === 'single-coin-tab') {
-            // 如果從未加載過數據，則在初次切換時主動進行分析載入
-            if (this.klines.length === 0) {
-                this.fetchAndAnalyze(true);
-            }
             setTimeout(() => {
                 const chartElement = document.getElementById('tv-chart');
                 if (this.chart && chartElement) {
