@@ -309,11 +309,12 @@ async function run() {
                 const tp = opp.tp;
                 const sl = opp.sl;
 
-                // 如果是替換舊交易，我們將舊交易的 status 標記為 CLOSED
+                // 如果是替換舊交易，我們將舊交易的 status 標記為 CLOSED，並記錄平倉價格
                 if (opp.replaceOld && opp.oldId) {
                     const oldRecord = history.find(r => r.id === opp.oldId);
                     if (oldRecord) {
                         oldRecord.status = 'CLOSED';
+                        oldRecord.closePrice = opp.lastPrice; // 平倉價為新交易的 entry 價格 (即當前現價)
                     }
                 }
 

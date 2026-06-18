@@ -1250,8 +1250,9 @@ class SNRTracer {
         if (oldPendingIndex !== -1) {
             const oldPending = history[oldPendingIndex];
             if (rr > oldPending.rr) {
-                // 新的盈虧比較佳，將舊交易改為 CLOSED，並允許寫入新交易
+                // 新的盈虧比較佳，將舊交易改為 CLOSED，並記錄平倉價格，允許寫入新交易
                 oldPending.status = 'CLOSED';
+                oldPending.closePrice = entry; // 平倉價即為當前現價（新機會進場點）
                 replaceOld = true;
             } else {
                 // 舊的盈虧比較佳，跳過新機會
@@ -1368,7 +1369,31 @@ class SNRTracer {
             } else if (r.status === 'SL') {
                 statusHTML = `<span class="status-pill sl">已止損 ❌</span>`;
             } else if (r.status === 'CLOSED') {
-                statusHTML = `<span class="status-pill closed">已平倉 🔄</span>`;
+                if (r.closePrice !== undefined && r.closePrice !== null) {
+                    const risk = Math.abs(r.entry - r.sl);
+                    let pnlChange = 0.0;
+                    if (risk > 0) {
+                        pnlChange = r.type === 'LONG' 
+                            ? (r.closePrice - r.entry) / risk 
+                            : (r.entry - r.closePrice) / risk;
+                    }
+                    const pnlStr = pnlChange >= 0 ? `+${pnlChange.toFixed(2)} R` : `${pnlChange.toFixed(2)} R`;
+                    const pnlClass = pnlChange >= 0 ? 'text-green' : 'text-red';
+                    statusHTML = `
+                        <span class="status-pill closed">已平倉 🔄</span>
+                        <div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">
+                            平倉價: $${this.formatPrice(r.closePrice)}<br>
+                            收益: <span class="${pnlClass}" style="font-weight: 700;">${pnlStr}</span>
+                        </div>
+                    `;
+                } else {
+                    statusHTML = `
+                        <span class="status-pill closed">已平倉 🔄</span>
+                        <div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">
+                            收益: <span class="text-red" style="font-weight: 700;">-1.00 R</span>
+                        </div>
+                    `;
+                }
             } else {
                 statusHTML = `<span class="status-pill expired">已過期 ⏳</span>`;
             }
@@ -1926,7 +1951,25 @@ class SNRTracer {
 
         let lastTime = chartPoints[0].time;
         settledRecords.forEach(r => {
-            const pnlChange = r.status === 'TP' ? r.rr : -1.0;
+            let pnlChange = 0;
+            if (r.status === 'TP') {
+                pnlChange = r.rr;
+            } else if (r.status === 'SL') {
+                pnlChange = -1.0;
+            } else if (r.status === 'CLOSED') {
+                if (r.closePrice !== undefined && r.closePrice !== null) {
+                    const risk = Math.abs(r.entry - r.sl);
+                    if (risk > 0) {
+                        pnlChange = r.type === 'LONG' 
+                            ? (r.closePrice - r.entry) / risk 
+                            : (r.entry - r.closePrice) / risk;
+                    } else {
+                        pnlChange = 0.0;
+                    }
+                } else {
+                    pnlChange = -1.0; // 舊交易無平倉價數據時，保守估計為損失 1R
+                }
+            }
             currentPnL += pnlChange;
             
             let recordTime = Math.floor(r.id / 1000);
