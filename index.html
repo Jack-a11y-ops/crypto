@@ -452,6 +452,7 @@
                             </select>
                         </div>
                         <button id="run-backtest-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px;">開始歷史回測</button>
+                        <button id="run-optimization-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px; background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%);">最佳化策略參數</button>
                     </div>
                 </div>
 
@@ -477,6 +478,32 @@
                 <div class="history-chart-card" style="margin-top: 20px; border: none; background: transparent; padding: 0;">
                     <h3 style="margin-bottom: 10px; font-weight: 600; color: var(--text-main);">回測模擬累計收益曲線 (Equity Curve)</h3>
                     <div id="backtest-equity-chart" class="history-equity-chart-container" style="height: 380px;"></div>
+                </div>
+
+                <!-- 回測參數最佳化結果面板 -->
+                <div id="backtest-optimization-card" class="radar-table-container" style="margin-top: 30px; border-top: 1px solid var(--border-color); padding-top: 20px; display: none;">
+                    <h3 style="margin-bottom: 10px; font-weight: 600; color: var(--text-main); display: flex; justify-content: space-between; align-items: center;">
+                        <span>策略參數最佳化結果 (Grid Search Optimizer)</span>
+                        <span style="font-size: 12px; color: var(--text-muted); font-weight: normal;">*以累計收益 (R值) 降序排序，推薦最優的前 3 名</span>
+                    </h3>
+                    <div style="overflow-x: auto;">
+                        <table class="premium-radar-table">
+                            <thead>
+                                <tr>
+                                    <th>排名</th>
+                                    <th>EMA 週期</th>
+                                    <th>ATR 止損倍數</th>
+                                    <th>總交易筆數</th>
+                                    <th>勝率</th>
+                                    <th>累計收益 (R值)</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="backtest-optimization-list">
+                                <!-- 網格搜尋結果動態插入 -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <div class="radar-table-container" style="margin-top: 30px; border-top: 1px solid var(--border-color); padding-top: 20px;">

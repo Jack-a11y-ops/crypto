@@ -469,6 +469,11 @@ class SNRTracer {
         if (runBacktestBtn) {
             runBacktestBtn.addEventListener('click', () => this.runHistoricalBacktest());
         }
+
+        const runOptimizationBtn = document.getElementById('run-optimization-btn');
+        if (runOptimizationBtn) {
+            runOptimizationBtn.addEventListener('click', () => this.runBacktestOptimization());
+        }
     }
 
     // 切換 Tab 輔助函式
@@ -2351,6 +2356,144 @@ class SNRTracer {
         });
     }
 
+    // 無副作用之單次策略回測計算，方便常規回測與參數最佳化網格搜尋複用
+    evaluateStrategy(klines, symbol, config = null) {
+        const trades = [];
+        let activeTrade = null;
+
+        for (let i = 100; i < klines.length; i++) {
+            const currentK = klines[i];
+            const historicalWindow = klines.slice(0, i + 1).map(d => ({
+                time: d.openTime / 1000,
+                open: d.open,
+                high: d.high,
+                low: d.low,
+                close: d.close
+            }));
+
+            const analysis = this.analyzeSNR(historicalWindow, config);
+
+            if (activeTrade) {
+                if (analysis.signal !== 'WATCH' && analysis.rr > 1.0) {
+                    if (analysis.winRate > activeTrade.winRate) {
+                        const closePrice = currentK.close;
+                        const risk = Math.abs(activeTrade.entry - activeTrade.sl);
+                        let pnl = 0;
+                        if (risk > 0) {
+                            pnl = activeTrade.direction === 'LONG'
+                                ? (closePrice - activeTrade.entry) / risk
+                                : (activeTrade.entry - closePrice) / risk;
+                        }
+                        
+                        activeTrade.status = 'CLOSED';
+                        activeTrade.closePrice = closePrice;
+                        activeTrade.closeTime = currentK.openTime;
+                        activeTrade.pnl = pnl;
+                        
+                        trades.push({ ...activeTrade });
+
+                        activeTrade = {
+                            symbol: symbol,
+                            direction: analysis.signal,
+                            entry: currentK.close,
+                            tp: analysis.tp,
+                            sl: analysis.sl,
+                            rr: analysis.rr,
+                            winRate: analysis.winRate,
+                            openTime: currentK.openTime,
+                            openIndex: i,
+                            status: 'PENDING'
+                        };
+                        continue;
+                    }
+                }
+
+                if (activeTrade.direction === 'LONG') {
+                    if (currentK.low <= activeTrade.sl && currentK.high >= activeTrade.tp) {
+                        activeTrade.status = 'SL';
+                        activeTrade.closePrice = activeTrade.sl;
+                        activeTrade.closeTime = currentK.openTime;
+                        activeTrade.pnl = -1.0;
+                        trades.push({ ...activeTrade });
+                        activeTrade = null;
+                    } else if (currentK.low <= activeTrade.sl) {
+                        activeTrade.status = 'SL';
+                        activeTrade.closePrice = activeTrade.sl;
+                        activeTrade.closeTime = currentK.openTime;
+                        activeTrade.pnl = -1.0;
+                        trades.push({ ...activeTrade });
+                        activeTrade = null;
+                    } else if (currentK.high >= activeTrade.tp) {
+                        activeTrade.status = 'TP';
+                        activeTrade.closePrice = activeTrade.tp;
+                        activeTrade.closeTime = currentK.openTime;
+                        activeTrade.pnl = activeTrade.rr;
+                        trades.push({ ...activeTrade });
+                        activeTrade = null;
+                    }
+                } else if (activeTrade.direction === 'SHORT') {
+                    if (currentK.high >= activeTrade.sl && currentK.low <= activeTrade.tp) {
+                        activeTrade.status = 'SL';
+                        activeTrade.closePrice = activeTrade.sl;
+                        activeTrade.closeTime = currentK.openTime;
+                        activeTrade.pnl = -1.0;
+                        trades.push({ ...activeTrade });
+                        activeTrade = null;
+                    } else if (currentK.high >= activeTrade.sl) {
+                        activeTrade.status = 'SL';
+                        activeTrade.closePrice = activeTrade.sl;
+                        activeTrade.closeTime = currentK.openTime;
+                        activeTrade.pnl = -1.0;
+                        trades.push({ ...activeTrade });
+                        activeTrade = null;
+                    } else if (currentK.low <= activeTrade.tp) {
+                        activeTrade.status = 'TP';
+                        activeTrade.closePrice = activeTrade.tp;
+                        activeTrade.closeTime = currentK.openTime;
+                        activeTrade.pnl = activeTrade.rr;
+                        trades.push({ ...activeTrade });
+                        activeTrade = null;
+                    }
+                }
+            } else {
+                if ((analysis.signal === 'LONG' || analysis.signal === 'SHORT') && analysis.rr > 1.0) {
+                    activeTrade = {
+                        symbol: symbol,
+                        direction: analysis.signal,
+                        entry: currentK.close,
+                        tp: analysis.tp,
+                        sl: analysis.sl,
+                        rr: analysis.rr,
+                        winRate: analysis.winRate,
+                        openTime: currentK.openTime,
+                        openIndex: i,
+                        status: 'PENDING'
+                    };
+                }
+            }
+        }
+
+        if (activeTrade) {
+            const finalK = klines[klines.length - 1];
+            const closePrice = finalK.close;
+            const risk = Math.abs(activeTrade.entry - activeTrade.sl);
+            let pnl = 0;
+            if (risk > 0) {
+                pnl = activeTrade.direction === 'LONG'
+                    ? (closePrice - activeTrade.entry) / risk
+                    : (activeTrade.entry - closePrice) / risk;
+            }
+            activeTrade.status = 'CLOSED';
+            activeTrade.closePrice = closePrice;
+            activeTrade.closeTime = finalK.openTime;
+            activeTrade.pnl = pnl;
+            trades.push({ ...activeTrade });
+            activeTrade = null;
+        }
+
+        return trades;
+    }
+
     // 運行歷史回測模擬引擎
     async runHistoricalBacktest() {
         const symbolInput = document.getElementById('backtest-symbol');
@@ -2390,138 +2533,8 @@ class SNRTracer {
                 volume: parseFloat(d.volume)
             }));
 
-            const trades = [];
-            let activeTrade = null;
-
-            for (let i = 100; i < klines.length; i++) {
-                const currentK = klines[i];
-                const historicalWindow = klines.slice(0, i + 1).map(d => ({
-                    time: d.openTime / 1000,
-                    open: d.open,
-                    high: d.high,
-                    low: d.low,
-                    close: d.close
-                }));
-
-                const analysis = this.analyzeSNR(historicalWindow);
-
-                if (activeTrade) {
-                    if (analysis.signal !== 'WATCH' && analysis.rr > 1.0) {
-                        if (analysis.winRate > activeTrade.winRate) {
-                            const closePrice = currentK.close;
-                            const risk = Math.abs(activeTrade.entry - activeTrade.sl);
-                            let pnl = 0;
-                            if (risk > 0) {
-                                pnl = activeTrade.direction === 'LONG'
-                                    ? (closePrice - activeTrade.entry) / risk
-                                    : (activeTrade.entry - closePrice) / risk;
-                            }
-                            
-                            activeTrade.status = 'CLOSED';
-                            activeTrade.closePrice = closePrice;
-                            activeTrade.closeTime = currentK.openTime;
-                            activeTrade.pnl = pnl;
-                            
-                            trades.push({ ...activeTrade });
-
-                            activeTrade = {
-                                symbol: symbol,
-                                direction: analysis.signal,
-                                entry: currentK.close,
-                                tp: analysis.tp,
-                                sl: analysis.sl,
-                                rr: analysis.rr,
-                                winRate: analysis.winRate,
-                                openTime: currentK.openTime,
-                                openIndex: i,
-                                status: 'PENDING'
-                            };
-                            continue;
-                        }
-                    }
-
-                    if (activeTrade.direction === 'LONG') {
-                        if (currentK.low <= activeTrade.sl && currentK.high >= activeTrade.tp) {
-                            activeTrade.status = 'SL';
-                            activeTrade.closePrice = activeTrade.sl;
-                            activeTrade.closeTime = currentK.openTime;
-                            activeTrade.pnl = -1.0;
-                            trades.push({ ...activeTrade });
-                            activeTrade = null;
-                        } else if (currentK.low <= activeTrade.sl) {
-                            activeTrade.status = 'SL';
-                            activeTrade.closePrice = activeTrade.sl;
-                            activeTrade.closeTime = currentK.openTime;
-                            activeTrade.pnl = -1.0;
-                            trades.push({ ...activeTrade });
-                            activeTrade = null;
-                        } else if (currentK.high >= activeTrade.tp) {
-                            activeTrade.status = 'TP';
-                            activeTrade.closePrice = activeTrade.tp;
-                            activeTrade.closeTime = currentK.openTime;
-                            activeTrade.pnl = activeTrade.rr;
-                            trades.push({ ...activeTrade });
-                            activeTrade = null;
-                        }
-                    } else if (activeTrade.direction === 'SHORT') {
-                        if (currentK.high >= activeTrade.sl && currentK.low <= activeTrade.tp) {
-                            activeTrade.status = 'SL';
-                            activeTrade.closePrice = activeTrade.sl;
-                            activeTrade.closeTime = currentK.openTime;
-                            activeTrade.pnl = -1.0;
-                            trades.push({ ...activeTrade });
-                            activeTrade = null;
-                        } else if (currentK.high >= activeTrade.sl) {
-                            activeTrade.status = 'SL';
-                            activeTrade.closePrice = activeTrade.sl;
-                            activeTrade.closeTime = currentK.openTime;
-                            activeTrade.pnl = -1.0;
-                            trades.push({ ...activeTrade });
-                            activeTrade = null;
-                        } else if (currentK.low <= activeTrade.tp) {
-                            activeTrade.status = 'TP';
-                            activeTrade.closePrice = activeTrade.tp;
-                            activeTrade.closeTime = currentK.openTime;
-                            activeTrade.pnl = activeTrade.rr;
-                            trades.push({ ...activeTrade });
-                            activeTrade = null;
-                        }
-                    }
-                } else {
-                    if ((analysis.signal === 'LONG' || analysis.signal === 'SHORT') && analysis.rr > 1.0) {
-                        activeTrade = {
-                            symbol: symbol,
-                            direction: analysis.signal,
-                            entry: currentK.close,
-                            tp: analysis.tp,
-                            sl: analysis.sl,
-                            rr: analysis.rr,
-                            winRate: analysis.winRate,
-                            openTime: currentK.openTime,
-                            openIndex: i,
-                            status: 'PENDING'
-                        };
-                    }
-                }
-            }
-
-            if (activeTrade) {
-                const finalK = klines[klines.length - 1];
-                const closePrice = finalK.close;
-                const risk = Math.abs(activeTrade.entry - activeTrade.sl);
-                let pnl = 0;
-                if (risk > 0) {
-                    pnl = activeTrade.direction === 'LONG'
-                        ? (closePrice - activeTrade.entry) / risk
-                        : (activeTrade.entry - closePrice) / risk;
-                }
-                activeTrade.status = 'CLOSED';
-                activeTrade.closePrice = closePrice;
-                activeTrade.closeTime = finalK.openTime;
-                activeTrade.pnl = pnl;
-                trades.push({ ...activeTrade });
-                activeTrade = null;
-            }
+            // 呼叫重構後的無副作用評估方法
+            const trades = this.evaluateStrategy(klines, symbol, this.strategyConfig);
 
             this.renderBacktestResults(trades, klines);
 
@@ -2548,6 +2561,171 @@ class SNRTracer {
                 runBtn.innerText = '開始歷史回測';
             }
         }
+    }
+
+    // 策略參數網格搜尋最佳化 (Grid Search Optimizer)
+    async runBacktestOptimization() {
+        const symbolInput = document.getElementById('backtest-symbol');
+        const intervalSelect = document.getElementById('backtest-interval');
+        const limitSelect = document.getElementById('backtest-limit');
+        const optBtn = document.getElementById('run-optimization-btn');
+        const optCard = document.getElementById('backtest-optimization-card');
+        const optList = document.getElementById('backtest-optimization-list');
+
+        if (!symbolInput || !intervalSelect || !limitSelect || !optBtn) return;
+
+        const symbol = symbolInput.value.toUpperCase().trim().replace('/', '');
+        const interval = intervalSelect.value;
+        const limit = parseInt(limitSelect.value);
+
+        if (!symbol) {
+            alert('請輸入有效的交易對，例如 BTCUSDT');
+            return;
+        }
+
+        optBtn.disabled = true;
+        optBtn.innerText = '最佳化計算中...';
+        
+        // 隱藏舊的優化結果卡片
+        if (optCard) optCard.style.display = 'none';
+
+        try {
+            const rawKlines = await this.getBinanceData(symbol, interval, limit);
+            if (!rawKlines || rawKlines.length < 100) {
+                alert('獲取 K 線數據不足 (至少需要 100 根)，請檢查幣種代碼是否正確。');
+                return;
+            }
+
+            const klines = rawKlines.map(d => ({
+                openTime: Number(d.openTime),
+                open: parseFloat(d.open),
+                high: parseFloat(d.high),
+                low: parseFloat(d.low),
+                close: parseFloat(d.close),
+                volume: parseFloat(d.volume)
+            }));
+
+            // 網格搜尋參數候選值 (4x4 = 16種組合)
+            const emaPeriods = [20, 50, 100, 200];
+            const atrMultipliers = [1.0, 1.5, 2.0, 3.0];
+            const results = [];
+
+            // 執行網格搜尋
+            for (const ema of emaPeriods) {
+                for (const atr of atrMultipliers) {
+                    const testConfig = {
+                        emaPeriod: ema,
+                        atrMultiplier: atr,
+                        riskRatio: this.strategyConfig.riskRatio || 30
+                    };
+
+                    const trades = this.evaluateStrategy(klines, symbol, testConfig);
+                    
+                    const total = trades.length;
+                    let winCount = 0;
+                    let totalPnL = 0;
+
+                    trades.forEach(t => {
+                        totalPnL += t.pnl;
+                        if (t.status === 'TP') {
+                            winCount++;
+                        } else if (t.status === 'CLOSED' && t.pnl > 0) {
+                            winCount++;
+                        }
+                    });
+
+                    const winRateVal = total > 0 ? (winCount / total * 100) : 0.0;
+
+                    results.push({
+                        ema: ema,
+                        atr: atr,
+                        totalTrades: total,
+                        winRate: winRateVal,
+                        totalPnL: totalPnL
+                    });
+                }
+            }
+
+            // 按累計收益 (totalPnL) 降序排列
+            results.sort((a, b) => b.totalPnL - a.totalPnL);
+
+            // 渲染結果列表
+            if (optList) {
+                optList.innerHTML = results.map((res, index) => {
+                    const isTop1 = index === 0;
+                    const pnlText = `${res.totalPnL >= 0 ? '+' : ''}${res.totalPnL.toFixed(2)} R`;
+                    const pnlColor = res.totalPnL > 0 ? 'var(--text-green)' : (res.totalPnL < 0 ? '#f6465d' : 'var(--text-muted)');
+                    
+                    // 前三名使用加強色彩或標籤
+                    const rankLabel = isTop1 
+                        ? `<span style="color: #ffd700; font-weight: bold;">🥇 1 (推薦最優)</span>`
+                        : (index === 1 
+                            ? `<span style="color: #c0c0c0; font-weight: bold;">🥈 2</span>`
+                            : (index === 2 
+                                ? `<span style="color: #cd7f32; font-weight: bold;">🥉 3</span>`
+                                : `${index + 1}`));
+
+                    const rowStyle = isTop1 ? `background: rgba(255, 215, 0, 0.04); border-left: 3px solid #ffd700;` : '';
+
+                    return `
+                        <tr style="${rowStyle}">
+                            <td style="font-weight: bold;">${rankLabel}</td>
+                            <td style="font-family: monospace; font-weight: bold; color: var(--accent-color);">${res.ema} EMA</td>
+                            <td style="font-family: monospace; font-weight: bold; color: var(--text-main);">${res.atr.toFixed(1)}x ATR</td>
+                            <td>${res.totalTrades} 筆</td>
+                            <td style="font-weight: 600;">${res.winRate.toFixed(1)}%</td>
+                            <td style="font-family: monospace; font-weight: bold; font-size: 15px; color: ${pnlColor};">${pnlText}</td>
+                            <td>
+                                <button class="primary-btn-xs" style="padding: 4px 10px; font-size: 11px; width: auto; background: ${isTop1 ? 'linear-gradient(135deg, #00c6ff 0%, #0072ff 100%)' : 'rgba(255,255,255,0.08)'}" onclick="app.applyOptimalConfig(${res.ema}, ${res.atr})">套用參數</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            // 顯示結果面板
+            if (optCard) {
+                optCard.style.display = 'block';
+                // 捲動至結果面板位置
+                optCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+        } catch (e) {
+            console.error('Optimization error:', e);
+            alert('策略最佳化計算過程中發生錯誤，請檢查您的輸入。');
+        } finally {
+            optBtn.disabled = false;
+            optBtn.innerText = '最佳化策略參數';
+        }
+    }
+
+    // 套用最優參數並即時重繪常規回測
+    async applyOptimalConfig(ema, atr) {
+        if (!confirm(`確定要將系統的策略設定調整為「${ema} EMA」與「${atr.toFixed(1)}x ATR」嗎？\n這將會同步變更您的雲端設定與背景自動掃描腳本參數。`)) return;
+
+        // 1. 更新自定義參數面板的 DOM 數值
+        const emaInput = document.getElementById('strategy-ema-period');
+        const atrInput = document.getElementById('strategy-atr-multiplier');
+
+        if (emaInput) emaInput.value = ema;
+        if (atrInput) atrInput.value = atr;
+
+        // 2. 更新記憶體與 LocalStorage
+        this.strategyConfig.emaPeriod = ema;
+        this.strategyConfig.atrMultiplier = atr;
+
+        if (this.currentUser) {
+            const email = this.currentUser.email;
+            localStorage.setItem(`snr_strategy_config_${email}`, JSON.stringify(this.strategyConfig));
+            
+            // 3. 同步至 Firebase Realtime Database
+            await this.syncToCloud();
+        }
+
+        alert(`已成功套用新參數設定！\n系統將自動重新運行歷史回測以展示最新資金走勢與明細。`);
+
+        // 4. 自動觸發並重新跑一次回測
+        this.runHistoricalBacktest();
     }
 
     // 渲染回測指標與交易明細表格
