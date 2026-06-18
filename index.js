@@ -714,6 +714,11 @@ class SNRTracer {
         
         // 登入成功後再行載入主圖表與分析 (標記為初始化載入，不記入歷史)
         this.fetchAndAnalyze(true);
+
+        // 登入成功後，主動依據當前 active tab 做切換與初始化渲染 (確保首頁預設為歷史紀錄時能自動加載數據)
+        const activeTab = document.querySelector('.tab-btn.active');
+        const activeTabId = activeTab ? activeTab.dataset.tab : 'history-tab';
+        this.switchTab(activeTabId);
     }
 
     async fetchAndAnalyze(isInitial = false) {
