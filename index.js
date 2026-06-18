@@ -2233,6 +2233,8 @@ class SNRTracer {
 
         runBtn.disabled = true;
         runBtn.innerText = '正在計算中...';
+        const startTime = Date.now();
+        let isSuccess = false;
 
         try {
             const rawKlines = await this.getBinanceData(symbol, interval, limit);
@@ -2385,12 +2387,28 @@ class SNRTracer {
 
             this.renderBacktestResults(trades, klines);
 
+            // UX 人工延遲，確保 Loading 狀態能被使用者看見
+            const elapsed = Date.now() - startTime;
+            const minTime = 500;
+            if (elapsed < minTime) {
+                await new Promise(resolve => setTimeout(resolve, minTime - elapsed));
+            }
+
+            isSuccess = true;
+            runBtn.innerText = '✓ 回測完成';
+            setTimeout(() => {
+                runBtn.disabled = false;
+                runBtn.innerText = '開始歷史回測';
+            }, 1200);
+
         } catch (e) {
             console.error('Backtest error:', e);
             alert('回測過程發生錯誤，請檢查您的輸入與網絡。');
         } finally {
-            runBtn.disabled = false;
-            runBtn.innerText = '開始歷史回測';
+            if (!isSuccess) {
+                runBtn.disabled = false;
+                runBtn.innerText = '開始歷史回測';
+            }
         }
     }
 
