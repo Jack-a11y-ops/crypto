@@ -1910,8 +1910,8 @@ class SNRTracer {
         // 1. 將資料進行拷貝並反轉，使其按時間「由舊到新」排序以供折線圖繪製
         const chronologicalRecords = [...records].reverse();
         
-        // 2. 過濾出已結算的交易 (TP 或 SL)
-        const settledRecords = chronologicalRecords.filter(r => r.status === 'TP' || r.status === 'SL');
+        // 2. 過濾出已結算的交易 (TP, SL 或 CLOSED)
+        const settledRecords = chronologicalRecords.filter(r => r.status === 'TP' || r.status === 'SL' || r.status === 'CLOSED');
         
         const chartPoints = [];
         let currentPnL = 0;
