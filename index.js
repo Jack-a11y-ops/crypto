@@ -502,6 +502,7 @@ class SNRTracer {
         // 切換到模擬收益曲線 Tab 時，更新收益數據並自適應圖表大小
         if (tabId === 'equity-curve-tab') {
             this.updateEquityCurveTab();
+            this.updatePaperAccountUI();
             setTimeout(() => {
                 const chartElement = document.getElementById('history-equity-chart');
                 if (this.equityChart && chartElement) {
