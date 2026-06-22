@@ -3426,12 +3426,9 @@ class SNRTracer {
         } else {
             // 目前為關閉狀態，點選以開啟
             if (!this.currentUser) {
-                alert('請先登入後再開啟自動分析！');
-                return;
-            }
-            if (this.currentUser.isGuest) {
-                alert('體驗訪客帳號不支援自動分析與信件通知，請註冊並登入正式帳號。');
-                return;
+                this.showNotification('ℹ️ 未登入提示', '您目前尚未登入，自動分析可正常運行與倒數，但不會發送信箱通知。');
+            } else if (this.currentUser.isGuest) {
+                this.showNotification('ℹ️ 訪客模式提醒', '您目前以訪客身分體驗，自動分析可正常運行與倒數，但不會發送信箱通知。');
             }
 
             this.autoScanSecondsLeft = 20 * 60; // 20 分鐘
