@@ -477,6 +477,21 @@ class SNRTracer {
             runOptimizationBtn.addEventListener('click', () => this.runBacktestOptimization());
         }
 
+        const top50Toggle = document.getElementById('backtest-top50-toggle');
+        if (top50Toggle) {
+            top50Toggle.addEventListener('change', (e) => {
+                const symbolInput = document.getElementById('backtest-symbol');
+                if (symbolInput) {
+                    if (e.target.checked) {
+                        symbolInput.disabled = true;
+                        symbolInput.value = '前50大成交量幣種';
+                    } else {
+                        symbolInput.disabled = false;
+                        symbolInput.value = 'BTCUSDT';
+                    }
+                }
+            });
+        }
     }
 
     // 切換 Tab 輔助函式
@@ -2501,6 +2516,12 @@ class SNRTracer {
 
         if (!symbolInput || !intervalSelect || !limitSelect || !runBtn) return;
 
+        const top50Toggle = document.getElementById('backtest-top50-toggle');
+        if (top50Toggle && top50Toggle.checked) {
+            await this.runPortfolioBacktest();
+            return;
+        }
+
         const symbol = symbolInput.value.toUpperCase().trim().replace('/', '');
         const interval = intervalSelect.value;
         const limit = parseInt(limitSelect.value);
@@ -2571,6 +2592,12 @@ class SNRTracer {
         const optList = document.getElementById('backtest-optimization-list');
 
         if (!symbolInput || !intervalSelect || !limitSelect || !optBtn) return;
+
+        const top50Toggle = document.getElementById('backtest-top50-toggle');
+        if (top50Toggle && top50Toggle.checked) {
+            await this.runPortfolioOptimization();
+            return;
+        }
 
         const symbol = symbolInput.value.toUpperCase().trim().replace('/', '');
         const interval = intervalSelect.value;
@@ -2724,6 +2751,272 @@ class SNRTracer {
 
         // 4. 自動觸發並重新跑一次回測
         this.runHistoricalBacktest();
+    }
+
+    // 更新回測進度條
+    updateBacktestProgress(statusText, percent) {
+        const card = document.getElementById('backtest-progress-card');
+        const statusEl = document.getElementById('backtest-progress-status');
+        const percentEl = document.getElementById('backtest-progress-percent');
+        const barEl = document.getElementById('backtest-progress-bar');
+
+        if (card) card.style.display = 'block';
+        if (statusEl) statusEl.innerText = statusText;
+        if (percentEl) percentEl.innerText = `${Math.round(percent)}%`;
+        if (barEl) barEl.style.width = `${percent}%`;
+    }
+
+    // 隱藏回測進度條
+    hideBacktestProgress() {
+        const card = document.getElementById('backtest-progress-card');
+        if (card) card.style.display = 'none';
+    }
+
+    // 運行多標的 (前 50 大) 綜合回測
+    async runPortfolioBacktest() {
+        const intervalSelect = document.getElementById('backtest-interval');
+        const limitSelect = document.getElementById('backtest-limit');
+        const runBtn = document.getElementById('run-backtest-btn');
+
+        if (!intervalSelect || !limitSelect || !runBtn) return;
+
+        const interval = intervalSelect.value;
+        const limit = parseInt(limitSelect.value);
+
+        runBtn.disabled = true;
+        runBtn.innerText = '綜合回測中...';
+
+        try {
+            // 1. 獲取成交量前 50 大 USDT 交易對
+            this.updateBacktestProgress('正在獲取前50大熱門標的...', 2);
+            const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
+            const tickers = await (await fetch(tickerUrl)).json();
+            const top50 = tickers
+                .filter(t => t.symbol.endsWith('USDT'))
+                .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
+                .slice(0, 50)
+                .map(t => t.symbol);
+
+            const allKlines = {};
+            
+            // 2. 異步序列下載 K 線數據，防止限頻與卡死
+            for (let i = 0; i < top50.length; i++) {
+                const sym = top50[i];
+                const progressPercent = (i / top50.length) * 70; // 下載進度佔 70%
+                this.updateBacktestProgress(`正在下載 K 線數據: ${sym} (${i + 1}/${top50.length})...`, progressPercent);
+                
+                try {
+                    const rawData = await this.getBinanceData(sym, interval, limit);
+                    if (rawData && rawData.length >= 100) {
+                        allKlines[sym] = rawData.map(d => ({
+                            openTime: Number(d.openTime),
+                            open: parseFloat(d.open),
+                            high: parseFloat(d.high),
+                            low: parseFloat(d.low),
+                            close: parseFloat(d.close),
+                            volume: parseFloat(d.volume)
+                        }));
+                    }
+                } catch (err) {
+                    console.error(`下載 ${sym} K線失敗:`, err);
+                }
+                await new Promise(resolve => setTimeout(resolve, 30));
+            }
+
+            // 3. 多標的綜合評估計算
+            this.updateBacktestProgress('正在計算多幣種策略分析結果...', 75);
+            const combinedTrades = [];
+            
+            for (const sym in allKlines) {
+                const klines = allKlines[sym];
+                const trades = this.evaluateStrategy(klines, sym, this.strategyConfig);
+                combinedTrades.push(...trades);
+            }
+
+            // 4. 按交易時間由舊到新排序，以便繪製組合資金走勢圖
+            this.updateBacktestProgress('正在排序交易紀錄並繪製資金走勢...', 90);
+            combinedTrades.sort((a, b) => a.openTime - b.openTime);
+
+            // 5. 渲染回測數據
+            this.renderBacktestResults(combinedTrades, []);
+            this.updateBacktestProgress('✓ 綜合回測完成！', 100);
+
+            setTimeout(() => {
+                this.hideBacktestProgress();
+                runBtn.disabled = false;
+                runBtn.innerText = '開始歷史回測';
+            }, 1000);
+
+        } catch (e) {
+            console.error('Portfolio backtest error:', e);
+            alert('多幣種綜合回測過程中發生錯誤，請檢查您的網絡。');
+            this.hideBacktestProgress();
+            runBtn.disabled = false;
+            runBtn.innerText = '開始歷史回測';
+        }
+    }
+
+    // 運行多標的 (前 50 大) 綜合參數最佳化
+    async runPortfolioOptimization() {
+        const intervalSelect = document.getElementById('backtest-interval');
+        const limitSelect = document.getElementById('backtest-limit');
+        const optBtn = document.getElementById('run-optimization-btn');
+        const optCard = document.getElementById('backtest-optimization-card');
+        const optList = document.getElementById('backtest-optimization-list');
+
+        if (!intervalSelect || !limitSelect || !optBtn) return;
+
+        const interval = intervalSelect.value;
+        const limit = parseInt(limitSelect.value);
+
+        optBtn.disabled = true;
+        optBtn.innerText = '綜合最佳化中...';
+
+        if (optCard) optCard.style.display = 'none';
+
+        try {
+            // 1. 獲取成交量前 50 大 USDT 交易對
+            this.updateBacktestProgress('正在獲取前50大熱門標的...', 2);
+            const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
+            const tickers = await (await fetch(tickerUrl)).json();
+            const top50 = tickers
+                .filter(t => t.symbol.endsWith('USDT'))
+                .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
+                .slice(0, 50)
+                .map(t => t.symbol);
+
+            const allKlines = {};
+            
+            // 2. 異步序列下載 K 線數據 (進度佔 0% ~ 40%)
+            for (let i = 0; i < top50.length; i++) {
+                const sym = top50[i];
+                const progressPercent = (i / top50.length) * 40;
+                this.updateBacktestProgress(`正在下載 K 線數據: ${sym} (${i + 1}/${top50.length})...`, progressPercent);
+                
+                try {
+                    const rawData = await this.getBinanceData(sym, interval, limit);
+                    if (rawData && rawData.length >= 100) {
+                        allKlines[sym] = rawData.map(d => ({
+                            openTime: Number(d.openTime),
+                            open: parseFloat(d.open),
+                            high: parseFloat(d.high),
+                            low: parseFloat(d.low),
+                            close: parseFloat(d.close),
+                            volume: parseFloat(d.volume)
+                        }));
+                    }
+                } catch (err) {
+                    console.error(`下載 ${sym} K線失敗:`, err);
+                }
+                await new Promise(resolve => setTimeout(resolve, 30));
+            }
+
+            // 3. 網格搜尋參數最佳化評估 (進度佔 40% ~ 95%)
+            const emaPeriods = [20, 50, 100, 200];
+            const atrMultipliers = [1.0, 1.5, 2.0, 3.0];
+            const results = [];
+
+            const totalCombinations = 16;
+            let combinationIndex = 0;
+
+            for (const ema of emaPeriods) {
+                for (const atr of atrMultipliers) {
+                    const testConfig = {
+                        emaPeriod: ema,
+                        atrMultiplier: atr,
+                        riskRatio: this.strategyConfig.riskRatio || 30
+                    };
+
+                    const progressPercent = 40 + (combinationIndex / totalCombinations) * 55;
+                    this.updateBacktestProgress(`評估網格組合: ${ema} EMA + ${atr.toFixed(1)}x ATR (${combinationIndex + 1}/${totalCombinations})...`, progressPercent);
+
+                    let totalTradesCombined = 0;
+                    let winTradesCombined = 0;
+                    let totalPnLCombined = 0;
+
+                    for (const sym in allKlines) {
+                        const klines = allKlines[sym];
+                        const trades = this.evaluateStrategy(klines, sym, testConfig);
+
+                        trades.forEach(t => {
+                            totalPnLCombined += t.pnl;
+                            if (t.status === 'TP') {
+                                winTradesCombined++;
+                            } else if (t.status === 'CLOSED' && t.pnl > 0) {
+                                winTradesCombined++;
+                            }
+                        });
+                        totalTradesCombined += trades.length;
+                    }
+
+                    const combinedWinRateVal = totalTradesCombined > 0 ? (winTradesCombined / totalTradesCombined * 100) : 0.0;
+
+                    results.push({
+                        ema: ema,
+                        atr: atr,
+                        totalTrades: totalTradesCombined,
+                        winRate: combinedWinRateVal,
+                        totalPnL: totalPnLCombined
+                    });
+
+                    combinationIndex++;
+                    await new Promise(resolve => setTimeout(resolve, 10)); // 防止卡死
+                }
+            }
+
+            // 4. 綜合累計收益降序排序
+            results.sort((a, b) => b.totalPnL - a.totalPnL);
+
+            // 5. 渲染最佳化結果表格
+            if (optList) {
+                optList.innerHTML = results.map((res, index) => {
+                    const isTop1 = index === 0;
+                    const pnlText = `${res.totalPnL >= 0 ? '+' : ''}${res.totalPnL.toFixed(2)} R`;
+                    const pnlColor = res.totalPnL > 0 ? 'var(--text-green)' : (res.totalPnL < 0 ? '#f6465d' : 'var(--text-muted)');
+                    
+                    const rankLabel = isTop1 
+                        ? `<span style="color: #ffd700; font-weight: bold;">🥇 1 (推薦最優)</span>`
+                        : (index === 1 
+                            ? `<span style="color: #c0c0c0; font-weight: bold;">🥈 2</span>`
+                            : (index === 2 
+                                ? `<span style="color: #cd7f32; font-weight: bold;">🥉 3</span>`
+                                : `${index + 1}`));
+
+                    const rowStyle = isTop1 ? `background: rgba(255, 215, 0, 0.04); border-left: 3px solid #ffd700;` : '';
+
+                    return `
+                        <tr style="${rowStyle}">
+                            <td style="font-weight: bold;">${rankLabel}</td>
+                            <td style="font-family: monospace; font-weight: bold; color: var(--accent-color);">${res.ema} EMA</td>
+                            <td style="font-family: monospace; font-weight: bold; color: var(--text-main);">${res.atr.toFixed(1)}x ATR</td>
+                            <td>${res.totalTrades} 筆</td>
+                            <td style="font-weight: 600;">${res.winRate.toFixed(1)}%</td>
+                            <td style="font-family: monospace; font-weight: bold; font-size: 15px; color: ${pnlColor};">${pnlText}</td>
+                            <td>
+                                <button class="primary-btn-xs" style="padding: 4px 10px; font-size: 11px; width: auto; background: ${isTop1 ? 'linear-gradient(135deg, #00c6ff 0%, #0072ff 100%)' : 'rgba(255,255,255,0.08)'}" onclick="app.applyOptimalConfig(${res.ema}, ${res.atr})">套用參數</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            this.updateBacktestProgress('✓ 綜合最佳化完成！', 100);
+
+            if (optCard) {
+                optCard.style.display = 'block';
+                optCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            setTimeout(() => this.hideBacktestProgress(), 1000);
+
+        } catch (e) {
+            console.error('Portfolio optimization error:', e);
+            alert('多幣種綜合最佳化過程中發生錯誤，請檢查您的網絡。');
+            this.hideBacktestProgress();
+        } finally {
+            optBtn.disabled = false;
+            optBtn.innerText = '最佳化策略參數';
+        }
     }
 
     // 渲染回測指標與交易明細表格

@@ -452,8 +452,23 @@
                                 <option value="10000">10000 根</option>
                             </select>
                         </div>
+                        <div style="display: flex; align-items: center; gap: 6px; margin: 0 5px;">
+                            <input type="checkbox" id="backtest-top50-toggle" style="cursor: pointer; width: 15px; height: 15px;">
+                            <label for="backtest-top50-toggle" style="font-size: 13px; color: var(--text-muted); cursor: pointer; user-select: none;">評估前50大幣種</label>
+                        </div>
                         <button id="run-backtest-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px;">開始歷史回測</button>
                         <button id="run-optimization-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px; background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%);">最佳化策略參數</button>
+                    </div>
+                </div>
+
+                <!-- 多幣種回測進度條 -->
+                <div id="backtest-progress-card" class="card" style="display: none; margin-top: 20px; background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); padding: 15px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
+                        <span id="backtest-progress-status" style="color: var(--text-main); font-weight: 500;">正在啟動多幣種回測最佳化...</span>
+                        <span id="backtest-progress-percent" style="color: var(--accent-color); font-weight: bold;">0%</span>
+                    </div>
+                    <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; border: 1px solid var(--glass-border);">
+                        <div id="backtest-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #00c6ff 0%, #0072ff 100%); transition: width 0.1s ease;"></div>
                     </div>
                 </div>
 
