@@ -19,6 +19,8 @@ class SNRTracer {
         this.equityLineSeries = null; // 模擬收益折線圖
         this.alertCooldowns = {}; // 記錄各幣種臨界警報的冷卻時間戳記
         this.autoScanTimer = null; // 自動雷達掃描計時器
+        this.autoScanCountdownTimer = null; // 自動雷達掃描倒數計時器
+        this.autoScanSecondsLeft = 0; // 距離下一次自動分析的剩餘秒數
         this.notifiedOpportunities = {}; // 記錄已通知過的交易機會，防重複發信
         this.modalChart = null; // 歷史複盤 Modal 圖表實例
         this.modalCandlestickSeries = null;
@@ -474,6 +476,11 @@ class SNRTracer {
         if (runOptimizationBtn) {
             runOptimizationBtn.addEventListener('click', () => this.runBacktestOptimization());
         }
+
+        const autoScanBtn = document.getElementById('auto-scan-btn');
+        if (autoScanBtn) {
+            autoScanBtn.addEventListener('click', () => this.toggleAutoScan());
+        }
     }
 
     // 切換 Tab 輔助函式
@@ -786,11 +793,6 @@ class SNRTracer {
         this.initStrategyConfig();
         this.initPaperAccount();
         this.initEmailJS();
-        
-        // 如果是登入的使用者，且不是訪客，則開啟每 20 分鐘的自動雷達掃描
-        if (this.currentUser && !this.currentUser.isGuest) {
-            this.startAutoRadarScan();
-        }
         
         // 登入成功後，主動依據當前 active tab 做切換與初始化渲染 (確保首頁預設為歷史紀錄時能自動加載數據)
         const activeTab = document.querySelector('.tab-btn.active');
@@ -3399,16 +3401,64 @@ class SNRTracer {
         }
     }
 
-    startAutoRadarScan() {
-        if (this.autoScanTimer) {
-            clearInterval(this.autoScanTimer);
-        }
+    formatCountdownTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
 
-        const intervalMs = 20 * 60 * 1000;
-        this.autoScanTimer = setInterval(() => {
-            console.log('背景自動掃描雷達中...');
+    toggleAutoScan() {
+        const btn = document.getElementById('auto-scan-btn');
+        if (!btn) return;
+
+        if (this.autoScanCountdownTimer) {
+            // 目前為開啟狀態，點選以關閉
+            clearInterval(this.autoScanCountdownTimer);
+            this.autoScanCountdownTimer = null;
+            this.autoScanSecondsLeft = 0;
+
+            btn.innerText = '開啟自動分析';
+            btn.style.background = 'rgba(255, 255, 255, 0.08)';
+            btn.style.borderColor = 'var(--glass-border)';
+            btn.style.color = 'var(--text-main)';
+
+            this.showNotification('ℹ️ 自動分析已關閉', '系統已停止背景每 20 分鐘的定時雷達掃描。');
+        } else {
+            // 目前為關閉狀態，點選以開啟
+            if (!this.currentUser) {
+                alert('請先登入後再開啟自動分析！');
+                return;
+            }
+            if (this.currentUser.isGuest) {
+                alert('體驗訪客帳號不支援自動分析與信件通知，請註冊並登入正式帳號。');
+                return;
+            }
+
+            this.autoScanSecondsLeft = 20 * 60; // 20 分鐘
+            btn.innerText = `自動分析中 (${this.formatCountdownTime(this.autoScanSecondsLeft)})`;
+            btn.style.background = 'rgba(14, 203, 129, 0.1)';
+            btn.style.borderColor = '#0ecb81';
+            btn.style.color = '#0ecb81';
+
+            this.showNotification('🚀 自動分析已開啟', '系統已啟動每 20 分鐘的雷達掃描。即將進行第一次分析...');
+            
+            // 立即執行一次分析
             this.scanMarket();
-        }, intervalMs);
+
+            // 啟動每秒計時器
+            this.autoScanCountdownTimer = setInterval(() => {
+                this.autoScanSecondsLeft--;
+                if (this.autoScanSecondsLeft <= 0) {
+                    btn.innerText = '自動分析中 (更新中...)';
+                    // 執行掃描
+                    this.scanMarket();
+                    // 重置秒數
+                    this.autoScanSecondsLeft = 20 * 60;
+                } else {
+                    btn.innerText = `自動分析中 (${this.formatCountdownTime(this.autoScanSecondsLeft)})`;
+                }
+            }, 1000);
+        }
     }
 
     async sendEmailNotification(newOpps) {
