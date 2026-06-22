@@ -477,10 +477,6 @@ class SNRTracer {
             runOptimizationBtn.addEventListener('click', () => this.runBacktestOptimization());
         }
 
-        const autoScanBtn = document.getElementById('auto-scan-btn');
-        if (autoScanBtn) {
-            autoScanBtn.addEventListener('click', () => this.toggleAutoScan());
-        }
     }
 
     // 切換 Tab 輔助函式
