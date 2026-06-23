@@ -371,13 +371,24 @@ async function run() {
                 const cleanSym = opp.symbol.replace('USDT', '');
                 const dir = opp.signal === 'LONG' ? '買入 (LONG) 📈' : '賣出 (SHORT) 📉';
                 
+                // 計算建議槓桿
+                const slPercent = (Math.abs(opp.lastPrice - opp.sl) / opp.lastPrice) * 100;
+                let leverageVal = riskRatio / slPercent;
+                let leverageStr = leverageVal > 125 ? `125x (超限)` : `${Math.round(leverageVal)}x`;
+
                 if (opp.replaceOld) {
                     const oldDirStr = opp.oldType === 'LONG' ? '買入 (LONG)' : '賣出 (SHORT)';
                     const oldIntStr = opp.oldInterval ? ` ${opp.oldInterval.toUpperCase()}` : '';
                     messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 勝率: ${(opp.winRate * 100).toFixed(0)}% 🔄\n`;
+                    messageText += `   • 進場現價: $${formatPrice(opp.lastPrice)}\n`;
+                    messageText += `   • 建議止盈: $${formatPrice(opp.tp)} | 建議止損: $${formatPrice(opp.sl)}\n`;
+                    messageText += `   • 建議槓桿: ${leverageStr} (依 ${riskRatio}% 風險估算)\n`;
                     messageText += `   ⚠️ 說明：此機會之預估勝率優於您進行中的舊交易（舊信號: ${oldDirStr}${oldIntStr}，進場價: $${formatPrice(opp.oldEntry)}，舊勝率: ${(opp.oldWinRate * 100).toFixed(0)}%），系統已自動為您將舊交易【平倉】並替換為此新機會！\n\n`;
                 } else {
-                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 預估勝率: ${(opp.winRate * 100).toFixed(0)}% | 盈虧比: ${opp.rr.toFixed(2)}\n\n`;
+                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 預估勝率: ${(opp.winRate * 100).toFixed(0)}% | 盈虧比: ${opp.rr.toFixed(2)}\n`;
+                    messageText += `   • 進場現價: $${formatPrice(opp.lastPrice)}\n`;
+                    messageText += `   • 建議止盈: $${formatPrice(opp.tp)} | 建議止損: $${formatPrice(opp.sl)}\n`;
+                    messageText += `   • 建議槓桿: ${leverageStr} (依 ${riskRatio}% 風險估算)\n\n`;
                 }
                 
                 // 6.2 同步寫入歷史紀錄 (比照前端 saveToHistory)
@@ -458,7 +469,7 @@ async function run() {
             });
 
             messageText += `請儘速前往您的 SNR TRACER 平台查看詳情與設定防守點位！\n`;
-            messageText += `網址：http://localhost:8000`;
+            messageText += `網址：https://spontaneous-kheer-c470e5.netlify.app/`;
 
             // 6.3 限制歷史紀錄長度最長為 100 筆
             if (history.length > 100) {
