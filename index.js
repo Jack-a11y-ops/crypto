@@ -3335,7 +3335,6 @@ class SNRTracer {
             const record = pendingRecords[i];
             try {
                 // 根據時間週期，計算一根 K 線的毫秒數，並往前退 1 根 K 線作為查詢起點
-                // 這樣能保證幣安 API 一定會回傳包含當前 K 線在內的數據，而不會回傳空陣列 []
                 let intervalMs = 60 * 1000;
                 if (record.interval === '5m') intervalMs = 5 * 60 * 1000;
                 else if (record.interval === '15m') intervalMs = 15 * 60 * 1000;
@@ -3360,35 +3359,77 @@ class SNRTracer {
                     hasUpdates = true;
                 }
 
-                // 遍歷 K 線進行結算檢測，必須是時間在 record.id 之後的 K 線才進行判定，以防誤觸訊號產生前的 TP/SL
+                let initialSl = record.initialSl !== undefined ? record.initialSl : record.sl;
+                const oneRSpace = Math.abs(record.entry - initialSl);
+                
+                if (record.initialSl === undefined) {
+                    record.initialSl = record.sl;
+                    hasUpdates = true;
+                }
+
+                // 遍歷 K 線進行結算與移動止損檢測
                 for (let k = 0; k < klines.length; k++) {
                     const klineOpenTime = klines[k][0];
-                    // 如果這根 K 線的開盤時間 + 週期毫秒小於等於訊號產生時間，代表這根是訊號之前的歷史 K 線，跳過
                     if (klineOpenTime + intervalMs < record.id) continue;
 
                     const high = parseFloat(klines[k][2]);
                     const low = parseFloat(klines[k][3]);
 
                     const cleanSymbol = record.symbol.replace('USDT', '');
+
+                    // 1. 移動止損 (Break-even) 判定 (獲利達 1R 時，止損移至 Entry 保本點)
+                    if (!record.isBreakEven) {
+                        if (record.type === 'LONG') {
+                            if (high >= record.entry + oneRSpace) {
+                                record.sl = record.entry;
+                                record.isBreakEven = true;
+                                hasUpdates = true;
+                                
+                                this.showNotification(
+                                    `🛡️ 移動止損已啟用`,
+                                    `${cleanSymbol} LONG 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
+                                );
+                                this.sendTelegramBreakEvenNotification(record);
+                            }
+                        } else if (record.type === 'SHORT') {
+                            if (low <= record.entry - oneRSpace) {
+                                record.sl = record.entry;
+                                record.isBreakEven = true;
+                                hasUpdates = true;
+                                
+                                this.showNotification(
+                                    `🛡️ 移動止損已啟用`,
+                                    `${cleanSymbol} SHORT 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
+                                );
+                                this.sendTelegramBreakEvenNotification(record);
+                            }
+                        }
+                    }
+
+                    // 2. TP / SL 結算判定
                     if (record.type === 'LONG') {
                         if (low <= record.sl) {
                             record.status = 'SL';
                             this.settlePaperTrade(record, 'SL');
                             hasUpdates = true;
+                            
                             this.showNotification(
-                                `❌ 交易已止損 (Stop Loss)`,
-                                `${cleanSymbol} LONG 交易進場於 $${this.formatPrice(record.entry)}，已被止損於 $${this.formatPrice(record.sl)}。`
+                                `❌ 交易已結算 (Stop Loss)`,
+                                `${cleanSymbol} LONG 交易已被止損於 $${this.formatPrice(record.sl)}。`
                             );
+                            this.sendTelegramSettlementNotification(record, 'SL');
                             break;
                         }
                         if (high >= record.tp) {
                             record.status = 'TP';
                             this.settlePaperTrade(record, 'TP');
                             hasUpdates = true;
+                            
                             this.showNotification(
-                                `🎯 交易已止盈 (Take Profit)`,
-                                `${cleanSymbol} LONG 交易進場於 $${this.formatPrice(record.entry)}，已成功止盈於 $${this.formatPrice(record.tp)}！`
+                                `🎯 交易已結算 (Take Profit)`,
+                                `${cleanSymbol} LONG 交易已成功止盈於 $${this.formatPrice(record.tp)}！`
                             );
+                            this.sendTelegramSettlementNotification(record, 'TP');
                             break;
                         }
                     } else if (record.type === 'SHORT') {
@@ -3396,20 +3437,24 @@ class SNRTracer {
                             record.status = 'SL';
                             this.settlePaperTrade(record, 'SL');
                             hasUpdates = true;
+                            
                             this.showNotification(
-                                `❌ 交易已止損 (Stop Loss)`,
-                                `${cleanSymbol} SHORT 交易進場於 $${this.formatPrice(record.entry)}，已被止損於 $${this.formatPrice(record.sl)}。`
+                                `❌ 交易已結算 (Stop Loss)`,
+                                `${cleanSymbol} SHORT 交易已被止損於 $${this.formatPrice(record.sl)}。`
                             );
+                            this.sendTelegramSettlementNotification(record, 'SL');
                             break;
                         }
                         if (low <= record.tp) {
                             record.status = 'TP';
                             this.settlePaperTrade(record, 'TP');
                             hasUpdates = true;
+                            
                             this.showNotification(
-                                `🎯 交易已止盈 (Take Profit)`,
-                                `${cleanSymbol} SHORT 交易進場於 $${this.formatPrice(record.entry)}，已成功止盈於 $${this.formatPrice(record.tp)}！`
+                                `🎯 交易已結算 (Take Profit)`,
+                                `${cleanSymbol} SHORT 交易已成功止盈於 $${this.formatPrice(record.tp)}！`
                             );
+                            this.sendTelegramSettlementNotification(record, 'TP');
                             break;
                         }
                     }
@@ -3431,6 +3476,65 @@ class SNRTracer {
             this.renderHistory(false);
             this.syncToCloud(); // 結算狀態更新後，異步同步至雲端
         }
+    }
+
+    async sendTelegramBreakEvenNotification(record) {
+        if (!this.currentUser) return;
+        const email = this.currentUser.email;
+        const configKey = `snr_telegram_config_${email}`;
+        
+        let config = {};
+        try { config = JSON.parse(localStorage.getItem(configKey) || '{}'); } catch (e) { return; }
+        const { telegramToken, telegramChatId } = config;
+        if (!telegramToken || !telegramChatId) return;
+
+        const cleanSymbol = record.symbol.replace('USDT', '');
+        const messageText = `🛡️【移動止損保本警報】\n\n您的 ${cleanSymbol} ${record.type} 交易已獲利達到 1R 空間！\n\n系統已自動將該持倉之止損位（SL）修改為您的進場價：$${this.formatPrice(record.entry)}。\n當前該筆交易已鎖定零風險保本！`;
+
+        try {
+            const corsProxy = 'https://corsproxy.io/?';
+            const url = corsProxy + `https://api.telegram.org/bot${telegramToken}/sendMessage`;
+            fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: telegramChatId, text: messageText })
+            });
+        } catch (e) { console.error('Error sending BE telegram notification:', e); }
+    }
+
+    async sendTelegramSettlementNotification(record, status) {
+        if (!this.currentUser) return;
+        const email = this.currentUser.email;
+        const configKey = `snr_telegram_config_${email}`;
+        
+        let config = {};
+        try { config = JSON.parse(localStorage.getItem(configKey) || '{}'); } catch (e) { return; }
+        const { telegramToken, telegramChatId } = config;
+        if (!telegramToken || !telegramChatId) return;
+
+        const cleanSymbol = record.symbol.replace('USDT', '');
+        const profitUSDT = record.realizedProfit !== undefined ? record.realizedProfit : 0;
+        const statusText = status === 'TP' ? '🎯【交易已成功止盈】' : '❌【交易已被止損出場】';
+        const profitSign = profitUSDT >= 0 ? `+${profitUSDT.toFixed(2)}` : `${profitUSDT.toFixed(2)}`;
+        
+        let messageText = `${statusText}\n\n`;
+        messageText += `交易對：${cleanSymbol}/USDT (${record.interval.toUpperCase()})\n`;
+        messageText += `方向：${record.type}\n`;
+        messageText += `進場價：$${this.formatPrice(record.entry)}\n`;
+        messageText += `出場價：$${this.formatPrice(status === 'TP' ? record.tp : record.sl)}\n`;
+        messageText += `實現盈虧：${profitSign} USDT\n\n`;
+        messageText += `請前往平台查看您的模擬帳戶權益明細！\n`;
+        messageText += `網址：https://spontaneous-kheer-c470e5.netlify.app/`;
+
+        try {
+            const corsProxy = 'https://corsproxy.io/?';
+            const url = corsProxy + `https://api.telegram.org/bot${telegramToken}/sendMessage`;
+            fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: telegramChatId, text: messageText })
+            });
+        } catch (e) { console.error('Error sending settlement telegram notification:', e); }
     }
 
     initFirebase() {
@@ -3522,7 +3626,7 @@ class SNRTracer {
         if (finalStatus === 'TP') {
             pnlR = record.rr || 1.5;
         } else if (finalStatus === 'SL') {
-            pnlR = -1.0;
+            pnlR = record.isBreakEven ? 0.0 : -1.0;
         }
 
         const profit = paperBalanceAtOpen * 0.02 * pnlR;

@@ -353,6 +353,191 @@ function analyzeSNR(data, config = null) {
     return { levels, support, resistance, signal, rr, sl, tp, lastATR, winRate, rsi: lastRSI, macdHist: lastHist };
 }
 
+async function checkCloudHistorySettlement(history, paperBalance, telegramToken, telegramChatId, riskRatio) {
+    const pendingRecords = history.filter(r => r.status === 'PENDING');
+    if (pendingRecords.length === 0) return { history, paperBalance, hasUpdates: false };
+
+    let hasUpdates = false;
+    const maxQueries = Math.min(pendingRecords.length, 5);
+    
+    for (let i = 0; i < maxQueries; i++) {
+        const record = pendingRecords[i];
+        try {
+            let intervalMs = 60 * 1000;
+            if (record.interval === '5m') intervalMs = 5 * 60 * 1000;
+            else if (record.interval === '15m') intervalMs = 15 * 60 * 1000;
+            else if (record.interval === '1h') intervalMs = 60 * 60 * 1000;
+            else if (record.interval === '4h') intervalMs = 4 * 60 * 60 * 1000;
+            else if (record.interval === '1d') intervalMs = 24 * 60 * 60 * 1000;
+
+            const queryStartTime = record.id - intervalMs;
+            const url = `https://api.binance.com/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=500`;
+            const response = await fetch(url);
+            const klines = await response.json();
+
+            if (!Array.isArray(klines) || klines.length === 0) continue;
+
+            const currentPrice = parseFloat(klines[klines.length - 1][4]);
+            const percentChange = ((currentPrice - record.entry) / record.entry) * 100;
+            
+            if (record.currentPrice !== currentPrice || record.percentChange !== percentChange) {
+                record.currentPrice = currentPrice;
+                record.percentChange = percentChange;
+                hasUpdates = true;
+            }
+
+            let initialSl = record.initialSl !== undefined ? record.initialSl : record.sl;
+            const oneRSpace = Math.abs(record.entry - initialSl);
+            
+            if (record.initialSl === undefined) {
+                record.initialSl = record.sl;
+                hasUpdates = true;
+            }
+
+            for (let k = 0; k < klines.length; k++) {
+                const klineOpenTime = klines[k][0];
+                if (klineOpenTime + intervalMs < record.id) continue;
+
+                const high = parseFloat(klines[k][2]);
+                const low = parseFloat(klines[k][3]);
+
+                const cleanSymbol = record.symbol.replace('USDT', '');
+
+                // 1. 移動止損 (Break-even) 判定
+                if (!record.isBreakEven) {
+                    if (record.type === 'LONG') {
+                        if (high >= record.entry + oneRSpace) {
+                            record.sl = record.entry;
+                            record.isBreakEven = true;
+                            hasUpdates = true;
+
+                            await sendCloudTelegramAlert(telegramToken, telegramChatId, 
+                                `🛡️【移動止損保本警報】\n\n您的 ${cleanSymbol} ${record.type} 交易已獲利達到 1R 空間！\n\n系統已自動將該持倉之止損位（SL）修改為您的進場價：$${formatPrice(record.entry)}。\n當前該筆交易已鎖定零風險保本！`
+                            );
+                        }
+                    } else if (record.type === 'SHORT') {
+                        if (low <= record.entry - oneRSpace) {
+                            record.sl = record.entry;
+                            record.isBreakEven = true;
+                            hasUpdates = true;
+
+                            await sendCloudTelegramAlert(telegramToken, telegramChatId, 
+                                `🛡️【移動止損保本警報】\n\n您的 ${cleanSymbol} ${record.type} 交易已獲利達到 1R 空間！\n\n系統已自動將該持倉之止損位（SL）修改為您的進場價：$${formatPrice(record.entry)}。\n當前該筆交易已鎖定零風險保本！`
+                            );
+                        }
+                    }
+                }
+
+                // 2. TP / SL 結算判定
+                if (record.type === 'LONG') {
+                    if (low <= record.sl) {
+                        record.status = 'SL';
+                        const profit = settleCloudPaperTrade(record, 'SL', paperBalance);
+                        paperBalance = parseFloat(paperBalance) + profit;
+                        hasUpdates = true;
+
+                        await sendCloudTelegramSettlementAlert(telegramToken, telegramChatId, record, 'SL', profit);
+                        break;
+                    }
+                    if (high >= record.tp) {
+                        record.status = 'TP';
+                        const profit = settleCloudPaperTrade(record, 'TP', paperBalance);
+                        paperBalance = parseFloat(paperBalance) + profit;
+                        hasUpdates = true;
+
+                        await sendCloudTelegramSettlementAlert(telegramToken, telegramChatId, record, 'TP', profit);
+                        break;
+                    }
+                } else if (record.type === 'SHORT') {
+                    if (high >= record.sl) {
+                        record.status = 'SL';
+                        const profit = settleCloudPaperTrade(record, 'SL', paperBalance);
+                        paperBalance = parseFloat(paperBalance) + profit;
+                        hasUpdates = true;
+
+                        await sendCloudTelegramSettlementAlert(telegramToken, telegramChatId, record, 'SL', profit);
+                        break;
+                    }
+                    if (low <= record.tp) {
+                        record.status = 'TP';
+                        const profit = settleCloudPaperTrade(record, 'TP', paperBalance);
+                        paperBalance = parseFloat(paperBalance) + profit;
+                        hasUpdates = true;
+
+                        await sendCloudTelegramSettlementAlert(telegramToken, telegramChatId, record, 'TP', profit);
+                        break;
+                    }
+                }
+            }
+
+            if (record.status === 'PENDING' && klines.length >= 500) {
+                record.status = 'EXPIRED';
+                hasUpdates = true;
+            }
+
+        } catch (err) {
+            console.error(`Cloud check settlement error for ${record.symbol}:`, err);
+        }
+    }
+    return { history, paperBalance, hasUpdates };
+}
+
+function settleCloudPaperTrade(record, finalStatus, currentPaperBalance) {
+    if (record.settledBalance) return 0;
+    const paperBalanceAtOpen = record.paperBalanceAtOpen !== undefined ? record.paperBalanceAtOpen : currentPaperBalance;
+    
+    let pnlR = -1.0;
+    if (finalStatus === 'TP') {
+        pnlR = record.rr || 1.5;
+    } else if (finalStatus === 'SL') {
+        pnlR = record.isBreakEven ? 0.0 : -1.0;
+    }
+
+    const profit = paperBalanceAtOpen * 0.02 * pnlR;
+    record.settledBalance = true;
+    record.realizedProfit = profit;
+    return profit;
+}
+
+async function sendCloudTelegramAlert(token, chatId, text) {
+    if (!token || !chatId) return;
+    try {
+        await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, text })
+        });
+    } catch (e) {
+        console.error('Send cloud telegram BE alert failed:', e);
+    }
+}
+
+async function sendCloudTelegramSettlementAlert(token, chatId, record, status, profitUSDT) {
+    if (!token || !chatId) return;
+    const cleanSymbol = record.symbol.replace('USDT', '');
+    const statusText = status === 'TP' ? '🎯【交易已成功止盈】' : '❌【交易已被止損出場】';
+    const profitSign = profitUSDT >= 0 ? `+${profitUSDT.toFixed(2)}` : `${profitUSDT.toFixed(2)}`;
+    
+    let messageText = `${statusText}\n\n`;
+    messageText += `交易對：${cleanSymbol}/USDT (${record.interval.toUpperCase()})\n`;
+    messageText += `方向：${record.type}\n`;
+    messageText += `進場價：$${formatPrice(record.entry)}\n`;
+    messageText += `出場價：$${formatPrice(status === 'TP' ? record.tp : record.sl)}\n`;
+    messageText += `實現盈虧：${profitSign} USDT\n\n`;
+    messageText += `請前往平台查看您的模擬帳戶權益明細！\n`;
+    messageText += `網址：https://spontaneous-kheer-c470e5.netlify.app/`;
+
+    try {
+        await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, text: messageText })
+        });
+    } catch (e) {
+        console.error('Send cloud telegram settlement alert failed:', e);
+    }
+}
+
 // 主執行流程
 async function run() {
     const taipeiTimeStr = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
@@ -388,6 +573,12 @@ async function run() {
         const atrMultiplier = strategyConfig.atrMultiplier || 1.5;
         const riskRatio = strategyConfig.riskRatio || 30;
         let paperBalance = userData.paperBalance !== undefined ? parseFloat(userData.paperBalance) : 10000.0;
+
+        // 執行持倉結算與移動止損判定
+        const settlementResult = await checkCloudHistorySettlement(history, paperBalance, telegramToken, telegramChatId, riskRatio);
+        history = settlementResult.history;
+        paperBalance = settlementResult.paperBalance;
+        let settlementUpdates = settlementResult.hasUpdates;
 
         console.log(`設定加載成功。掃描週期: ${interval.toUpperCase()} | Telegram Bot 已配置 | 策略參數: ${emaPeriod} EMA, ${atrMultiplier}x ATR, ${riskRatio}% 風險 | 虛擬餘額: ${paperBalance.toFixed(2)} USDT`);
 
@@ -642,6 +833,20 @@ async function run() {
             }
         } else {
             console.log('無符合條件的新交易機會，或新機會已被過濾去重。跳過發信。');
+            
+            // 如果沒有新機會，但有持倉結算或移動止損更新，依然需要 PATCH 同步回雲端
+            if (settlementUpdates) {
+                console.log('有持倉結算或移動止損更新，正在同步至雲端 Firebase...');
+                await fetch(rtdbUrl, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        history: history,
+                        paperBalance: paperBalance,
+                        updatedAt: { ".sv": "timestamp" }
+                    })
+                });
+            }
         }
 
     } catch (error) {
