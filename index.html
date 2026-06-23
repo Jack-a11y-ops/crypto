@@ -157,34 +157,38 @@
 
         <!-- Tab 2: 全市場雷達掃描 -->
         <div id="market-radar-tab" class="tab-content">
-            <!-- 自動定時掃描與 LINE Notify 通知設定卡片 -->
+            <!-- 自動定時掃描與 Telegram 通知設定卡片 -->
             <div class="card email-config-card" style="margin-bottom: 20px;">
                 <div class="email-config-header" onclick="app.toggleEmailConfig()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
-                    <h2 style="font-size: 16px; font-weight: 600; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px;">💬 自動定時掃描與 LINE Notify 通知設定</h2>
+                    <h2 style="font-size: 16px; font-weight: 600; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px;">💬 自動定時掃描與 Telegram 通知設定</h2>
                     <span id="email-config-arrow" style="font-size: 12px; color: var(--text-muted); transition: transform 0.3s;">▼</span>
                 </div>
                 <div id="email-config-content" class="email-config-content hidden" style="margin-top: 15px;">
                     <p class="config-tip" style="font-size: 12px; color: var(--text-muted); line-height: 1.5; text-align: left; margin: 0 0 15px 0;">
-                        網頁開啟時，系統預設每 20 分鐘在背景自動進行雷達掃描。若希望發現優質交易機會時收到 LINE 警報，請至 <a href="https://notify-bot.line.me/" target="_blank" style="color: var(--accent-color); text-decoration: underline;">LINE Notify 官網</a> 登入並發行權杖 (Token)，然後配置下方參數：
+                        網頁開啟時，系統預設每 20 分鐘在背景自動進行雷達掃描。若希望在發現優質交易機會時收到 Telegram 警報，請按照下方指引建立 Bot 並配置參數：
                     </p>
-                    <div style="display: grid; grid-template-columns: 1fr; gap: 15px; width: 100%;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; width: 100%;">
                         <div class="input-group">
-                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">LINE Notify 存取權杖 (Access Token)</label>
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">Telegram Bot Token</label>
                             <div style="display: flex; gap: 8px; width: 100%;">
-                                <input type="password" id="line-notify-token" placeholder="請貼上您的 LINE Notify Token" style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
-                                <button id="toggle-token-visibility-btn" class="secondary-btn-sm" style="width: auto; padding: 0 12px; font-size: 11px;">顯示</button>
+                                <input type="password" id="telegram-token" placeholder="請輸入 Bot Token (從 BotFather 取得)" style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                                <button id="toggle-tg-token-visibility-btn" class="secondary-btn-sm" style="width: auto; padding: 0 12px; font-size: 11px;">顯示</button>
                             </div>
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">Telegram Chat ID</label>
+                            <input type="text" id="telegram-chat-id" placeholder="請輸入 Chat ID (例如: 987654321)" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
                         </div>
                     </div>
                     <div style="margin-top: 12px; font-size: 11px; color: var(--text-muted); line-height: 1.5; border-left: 2px solid var(--accent-color); padding-left: 8px; margin-bottom: 15px;">
-                        💡 <strong>如何取得 Token？</strong><br>
-                        1. 前往 LINE Notify 個人頁面登入後，點擊「發行權杖 (Generate token)」。<br>
-                        2. 輸入權杖名稱（例如：SNR 警報），並選擇接收通知的聊天室（例如：透過1對1聊天接收通知）。<br>
-                        3. 複製產生的權杖貼入上方輸入框。網頁測試將使用代理服務轉發，GitHub Actions 雲端掃描則會安全地直接發送。
+                        💡 <strong>如何取得 Bot Token 與 Chat ID？</strong><br>
+                        1. <strong>建立 Bot</strong>：在 Telegram 中搜尋官方機器人 <a href="https://t.me/BotFather" target="_blank" style="color: var(--accent-color); text-decoration: underline;">@BotFather</a>，發送 <code>/newbot</code> 依提示輸入機器人名稱，即可取得 <strong>Token</strong>。<br>
+                        2. <strong>啟動 Bot</strong>：點擊您建立好的機器人連結，發送任何訊息以啟動對話。<br>
+                        3. <strong>取得 Chat ID</strong>：在 Telegram 搜尋 <a href="https://t.me/userinfobot" target="_blank" style="color: var(--accent-color); text-decoration: underline;">@userinfobot</a> 並點擊啟動，它會立刻回傳您的 <strong>Id</strong> 數字（即為 Chat ID）。
                     </div>
                     <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button id="save-line-config-btn" class="primary-btn-sm" style="width: auto; padding: 8px 20px;">儲存 LINE 設定</button>
-                        <button id="test-line-btn" class="danger-btn-sm" style="padding: 8px 20px; font-size: 12px; height: auto; background: linear-gradient(135deg, #00b900 0%, #008f00 100%); border-color: #008f00;">測試 LINE 發送</button>
+                        <button id="save-tg-config-btn" class="primary-btn-sm" style="width: auto; padding: 8px 20px;">儲存 Telegram 設定</button>
+                        <button id="test-tg-btn" class="danger-btn-sm" style="padding: 8px 20px; font-size: 12px; height: auto; background: linear-gradient(135deg, #0088cc 0%, #005580 100%); border-color: #005580;">測試 Telegram 發送</button>
                     </div>
                 </div>
             </div>

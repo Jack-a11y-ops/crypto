@@ -46,7 +46,7 @@ class SNRTracer {
         this.bindEvents();
         this.initAuth(); // 啟動身份驗證流程
         this.requestNotificationPermission(); // 請求通知權限
-        this.initLineConfig(); // 初始化 LINE Notify 設定
+        this.initTelegramConfig(); // 初始化 Telegram 設定
     }
 
     initChart() {
@@ -423,34 +423,34 @@ class SNRTracer {
             });
         }
 
-        // 儲存 LINE 設定按鈕監聽
-        const saveLineConfigBtn = document.getElementById('save-line-config-btn');
-        if (saveLineConfigBtn) {
-            saveLineConfigBtn.addEventListener('click', () => {
-                this.saveLineConfig();
+        // 儲存 Telegram 設定按鈕監聽
+        const saveTgConfigBtn = document.getElementById('save-tg-config-btn');
+        if (saveTgConfigBtn) {
+            saveTgConfigBtn.addEventListener('click', () => {
+                this.saveTelegramConfig();
             });
         }
 
-        // 測試 LINE 發送按鈕監聽
-        const testLineBtn = document.getElementById('test-line-btn');
-        if (testLineBtn) {
-            testLineBtn.addEventListener('click', () => {
-                this.sendTestLineNotification();
+        // 測試 Telegram 發送按鈕監聽
+        const testTgBtn = document.getElementById('test-tg-btn');
+        if (testTgBtn) {
+            testTgBtn.addEventListener('click', () => {
+                this.sendTestTelegramNotification();
             });
         }
 
-        // LINE Token 顯示/隱藏切換監聽
-        const toggleTokenVisibilityBtn = document.getElementById('toggle-token-visibility-btn');
-        if (toggleTokenVisibilityBtn) {
-            toggleTokenVisibilityBtn.addEventListener('click', () => {
-                const tokenInput = document.getElementById('line-notify-token');
+        // Telegram Token 顯示/隱藏切換監聽
+        const toggleTgTokenVisibilityBtn = document.getElementById('toggle-tg-token-visibility-btn');
+        if (toggleTgTokenVisibilityBtn) {
+            toggleTgTokenVisibilityBtn.addEventListener('click', () => {
+                const tokenInput = document.getElementById('telegram-token');
                 if (tokenInput) {
                     if (tokenInput.type === 'password') {
                         tokenInput.type = 'text';
-                        toggleTokenVisibilityBtn.innerText = '隱藏';
+                        toggleTgTokenVisibilityBtn.innerText = '隱藏';
                     } else {
                         tokenInput.type = 'password';
-                        toggleTokenVisibilityBtn.innerText = '顯示';
+                        toggleTgTokenVisibilityBtn.innerText = '顯示';
                     }
                 }
             });
@@ -795,8 +795,8 @@ class SNRTracer {
                     if (cloudData.history) {
                         localStorage.setItem(`snr_history_${user.email}`, JSON.stringify(cloudData.history));
                     }
-                    if (cloudData.lineConfig) {
-                        localStorage.setItem(`snr_line_config_${user.email}`, JSON.stringify(cloudData.lineConfig));
+                    if (cloudData.telegramConfig) {
+                        localStorage.setItem(`snr_telegram_config_${user.email}`, JSON.stringify(cloudData.telegramConfig));
                     }
                     if (cloudData.strategyConfig) {
                         localStorage.setItem(`snr_strategy_config_${user.email}`, JSON.stringify(cloudData.strategyConfig));
@@ -828,7 +828,7 @@ class SNRTracer {
         // 登入成功後載入自定義策略參數設定、虛擬帳戶與 LINE Notify 設定
         this.initStrategyConfig();
         this.initPaperAccount();
-        this.initLineConfig();
+        this.initTelegramConfig();
         
         // 登入成功後，主動依據當前 active tab 做切換與初始化渲染 (確保首頁預設為歷史紀錄時能自動加載數據)
         const activeTab = document.querySelector('.tab-btn.active');
@@ -1376,8 +1376,8 @@ class SNRTracer {
 
             // 5. 發送通知與顯示
             if (newOpportunities.length > 0) {
-                // 1. 發送 LINE 通知
-                this.sendLineNotification(newOpportunities);
+                // 1. 發送 Telegram 通知
+                this.sendTelegramNotification(newOpportunities);
                 
                 // 2. 顯示系統桌面通知（內含提示音效）
                 if (newOpportunities.length === 1) {
@@ -3325,7 +3325,7 @@ class SNRTracer {
         if (!this.db || !this.currentUser) return;
         const email = this.currentUser.email;
         const historyKey = `snr_history_${email}`;
-        const lineConfigKey = `snr_line_config_${email}`;
+        const tgConfigKey = `snr_telegram_config_${email}`;
         const strategyConfigKey = `snr_strategy_config_${email}`;
         
         let history = [];
@@ -3335,11 +3335,11 @@ class SNRTracer {
             history = [];
         }
 
-        let lineConfig = {};
+        let telegramConfig = {};
         try {
-            lineConfig = JSON.parse(localStorage.getItem(lineConfigKey) || '{}');
+            telegramConfig = JSON.parse(localStorage.getItem(tgConfigKey) || '{}');
         } catch (e) {
-            lineConfig = {};
+            telegramConfig = {};
         }
 
         let strategyConfig = {};
@@ -3356,7 +3356,7 @@ class SNRTracer {
                 lastSymbol: this.symbol,
                 lastInterval: this.interval,
                 history: history,
-                lineConfig: lineConfig,
+                telegramConfig: telegramConfig,
                 strategyConfig: strategyConfig,
                 paperBalance: this.paperBalance,
                 updatedAt: firebase.database.ServerValue.TIMESTAMP
@@ -3366,10 +3366,10 @@ class SNRTracer {
         }
     }
 
-    initLineConfig() {
+    initTelegramConfig() {
         if (!this.currentUser) return;
         const email = this.currentUser.email;
-        const configKey = `snr_line_config_${email}`;
+        const configKey = `snr_telegram_config_${email}`;
         let config = {};
         try {
             config = JSON.parse(localStorage.getItem(configKey) || '{}');
@@ -3377,8 +3377,10 @@ class SNRTracer {
             config = {};
         }
 
-        const tokenInput = document.getElementById('line-notify-token');
-        if (tokenInput) tokenInput.value = config.lineToken || '';
+        const tokenInput = document.getElementById('telegram-token');
+        const chatIdInput = document.getElementById('telegram-chat-id');
+        if (tokenInput) tokenInput.value = config.telegramToken || '';
+        if (chatIdInput) chatIdInput.value = config.telegramChatId || '';
     }
 
     settlePaperTrade(record, finalStatus) {
@@ -3626,76 +3628,81 @@ class SNRTracer {
         }
     }
 
-    saveLineConfig() {
+    saveTelegramConfig() {
         if (!this.currentUser) {
             alert('請先登入帳戶再儲存設定');
             return;
         }
 
-        const lineToken = document.getElementById('line-notify-token').value.trim();
+        const telegramToken = document.getElementById('telegram-token').value.trim();
+        const telegramChatId = document.getElementById('telegram-chat-id').value.trim();
 
-        if (!lineToken) {
-            alert('請填寫 LINE Notify 存取權杖 (Access Token)');
+        if (!telegramToken || !telegramChatId) {
+            alert('請填寫 Telegram Bot Token 與 Chat ID');
             return;
         }
 
         const email = this.currentUser.email;
-        const configKey = `snr_line_config_${email}`;
+        const configKey = `snr_telegram_config_${email}`;
         
         const config = {
-            lineToken
+            telegramToken,
+            telegramChatId
         };
 
         localStorage.setItem(configKey, JSON.stringify(config));
 
-        alert('LINE Notify 設定儲存成功！並已同步至雲端。');
+        alert('Telegram 通知設定儲存成功！並已同步至雲端。');
         this.syncToCloud();
     }
 
-    async sendTestLineNotification() {
+    async sendTestTelegramNotification() {
         if (!this.currentUser) {
             alert('請先登入帳戶再測試發送');
             return;
         }
 
-        const lineToken = document.getElementById('line-notify-token').value.trim();
+        const telegramToken = document.getElementById('telegram-token').value.trim();
+        const telegramChatId = document.getElementById('telegram-chat-id').value.trim();
 
-        if (!lineToken) {
-            alert('請填寫 LINE Notify 存取權杖 (Access Token) 再進行測試。');
+        if (!telegramToken || !telegramChatId) {
+            alert('請完整填寫 Telegram Bot Token 與 Chat ID 再進行測試。');
             return;
         }
 
-        const testBtn = document.getElementById('test-line-btn');
+        const testBtn = document.getElementById('test-tg-btn');
         testBtn.innerText = '發送中...';
         testBtn.disabled = true;
 
         try {
             const corsProxy = 'https://corsproxy.io/?';
-            const targetUrl = 'https://notify-api.line.me/api/notify';
+            const targetUrl = `https://api.telegram.org/bot${telegramToken}/sendMessage`;
             const proxyUrl = corsProxy + targetUrl;
             
-            const messageText = `\n【SNR TRACER】測試發送\n您好，這是一條來自 SNR TRACER 策略分析儀的 LINE 測試通知！\n\n當前您的 LINE Notify 設定正確無誤。當自動掃描偵測到符合條件的交易機會時，您將會立刻收到通知。\n\n發送時間：${new Date().toLocaleString()}`;
+            const messageText = `【SNR TRACER】測試發送\n您好，這是一條來自 SNR TRACER 策略分析儀的 Telegram 測試通知！\n\n當前您的 Telegram Bot 設定正確無誤。當自動掃描偵測到符合條件的交易機會時，您將會立刻收到通知。\n\n發送時間：${new Date().toLocaleString()}`;
 
             const response = await fetch(proxyUrl, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${lineToken}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
+                    'Content-Type': 'application/json'
                 },
-                body: `message=${encodeURIComponent(messageText)}`
+                body: JSON.stringify({
+                    chat_id: telegramChatId,
+                    text: messageText
+                })
             });
 
             if (response.ok) {
-                alert('LINE 測試通知發送成功！請檢查您的 LINE 聊天室。');
+                alert('Telegram 測試通知發送成功！請檢查您的 Telegram 聊天室。');
             } else {
                 const errText = await response.text();
                 alert(`發送失敗，狀態碼: ${response.status}，訊息: ${errText}`);
             }
         } catch (error) {
-            console.error('LINE test notification failed:', error);
+            console.error('Telegram test notification failed:', error);
             alert(`測試發送失敗: ${error.message || error}`);
         } finally {
-            testBtn.innerText = '測試 LINE 發送';
+            testBtn.innerText = '測試 Telegram 發送';
             testBtn.disabled = false;
         }
     }
@@ -3757,10 +3764,10 @@ class SNRTracer {
         }
     }
 
-    async sendLineNotification(newOpps) {
+    async sendTelegramNotification(newOpps) {
         if (!this.currentUser) return;
         const email = this.currentUser.email;
-        const configKey = `snr_line_config_${email}`;
+        const configKey = `snr_telegram_config_${email}`;
         
         let config = {};
         try {
@@ -3769,21 +3776,21 @@ class SNRTracer {
             return;
         }
 
-        const { lineToken } = config;
+        const { telegramToken, telegramChatId } = config;
         
         // 如果設定不完整，靜默跳過發送，只在控制台輸出
-        if (!lineToken) {
-            console.log('LINE Notify 設定不完整，跳過通知發送');
+        if (!telegramToken || !telegramChatId) {
+            console.log('Telegram 設定不完整，跳過通知發送');
             return;
         }
 
         try {
             const corsProxy = 'https://corsproxy.io/?';
-            const targetUrl = 'https://notify-api.line.me/api/notify';
+            const targetUrl = `https://api.telegram.org/bot${telegramToken}/sendMessage`;
             const proxyUrl = corsProxy + targetUrl;
 
             // 格式化新發現的機會清單
-            let messageText = `\n【SNR TRACER】雷達發現 ${newOpps.length} 個交易機會！\n\n`;
+            let messageText = `【SNR TRACER】雷達發現 ${newOpps.length} 個交易機會！\n\n`;
             messageText += `雷達週期：${this.interval.toUpperCase()}\n\n`;
             messageText += `【新交易機會清單】:\n`;
             
@@ -3806,20 +3813,22 @@ class SNRTracer {
             const response = await fetch(proxyUrl, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${lineToken}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
+                    'Content-Type': 'application/json'
                 },
-                body: `message=${encodeURIComponent(messageText)}`
+                body: JSON.stringify({
+                    chat_id: telegramChatId,
+                    text: messageText
+                })
             });
 
             if (response.ok) {
-                console.log('交易機會 LINE 通知發送成功！');
+                console.log('交易機會 Telegram 通知發送成功！');
             } else {
                 const errText = await response.text();
-                console.warn('交易機會 LINE 通知發送失敗，狀態碼:', response.status, '錯誤:', errText);
+                console.warn('交易機會 Telegram 通知發送失敗，狀態碼:', response.status, '錯誤:', errText);
             }
         } catch (error) {
-            console.error('發送機會 LINE 通知出錯:', error);
+            console.error('發送機會 Telegram 通知出錯:', error);
         }
     }
 }

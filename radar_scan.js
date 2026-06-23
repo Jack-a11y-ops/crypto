@@ -243,11 +243,11 @@ async function run() {
             process.exit(1);
         }
 
-        const lineConfig = userData.lineConfig || {};
-        const { lineToken } = lineConfig;
+        const telegramConfig = userData.telegramConfig || {};
+        const { telegramToken, telegramChatId } = telegramConfig;
 
-        if (!lineToken) {
-            console.warn('警告：LINE Notify 通知設定不完整。請先於網頁端「全市場雷達掃描」分頁中填寫並儲存設定。');
+        if (!telegramToken || !telegramChatId) {
+            console.warn('警告：Telegram 通知設定不完整。請先於網頁端「全市場雷達掃描」分頁中填寫並儲存設定。');
             process.exit(0);
         }
 
@@ -261,7 +261,7 @@ async function run() {
         const riskRatio = strategyConfig.riskRatio || 30;
         let paperBalance = userData.paperBalance !== undefined ? parseFloat(userData.paperBalance) : 10000.0;
 
-        console.log(`設定加載成功。掃描週期: ${interval.toUpperCase()} | LINE Token 已配置 | 策略參數: ${emaPeriod} EMA, ${atrMultiplier}x ATR, ${riskRatio}% 風險 | 虛擬餘額: ${paperBalance.toFixed(2)} USDT`);
+        console.log(`設定加載成功。掃描週期: ${interval.toUpperCase()} | Telegram Bot 已配置 | 策略參數: ${emaPeriod} EMA, ${atrMultiplier}x ATR, ${riskRatio}% 風險 | 虛擬餘額: ${paperBalance.toFixed(2)} USDT`);
 
         // 3. 獲取幣安前 50 大成交量 USDT 交易對
         console.log('正在從幣安獲取前 50 大成交量交易對...');
@@ -357,13 +357,13 @@ async function run() {
             }
         });
 
-        // 6. 如果有新機會，發送 LINE 通知並同步更新歷史紀錄與已通知時間戳
+        // 6. 如果有新機會，發送 Telegram 通知並同步更新歷史紀錄與已通知時間戳
         if (newOpportunities.length > 0) {
-            console.log(`發現 ${newOpportunities.length} 個新機會！準備發送 LINE 通知...`);
+            console.log(`發現 ${newOpportunities.length} 個新機會！準備發送 Telegram 通知...`);
 
-            // 6.1 格式化郵件內文 (強制採用台灣時間 GMT+8)
+            // 6.1 格式化通知內文 (強制採用台灣時間 GMT+8)
             const taipeiTimeStr = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
-            let messageText = `親愛的 SNR TRACER 使用者，您好：\n\n系統已在雲端背景掃描中，偵測到符合條件的優質交易機會！\n\n偵測時間（台灣時間）：${taipeiTimeStr}\n\n`;
+            let messageText = `【SNR TRACER】雲端雷達發現交易機會！\n\n偵測時間（台灣時間）：${taipeiTimeStr}\n\n`;
             messageText += `雷達週期：${interval.toUpperCase()}\n\n`;
             messageText += `【新交易機會清單】:\n`;
             
@@ -465,23 +465,23 @@ async function run() {
                 history = history.slice(0, 100);
             }
 
-            // 6.4 發送 LINE Notify API 請求
-            const lineNotifyUrl = 'https://notify-api.line.me/api/notify';
+            // 6.4 發送 Telegram Bot API 請求
+            const telegramUrl = `https://api.telegram.org/bot${telegramToken}/sendMessage`;
 
-            const lineResponse = await fetch(lineNotifyUrl, {
+            const tgResponse = await fetch(telegramUrl, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${lineToken}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                },
-                body: `message=${encodeURIComponent(messageText)}`
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: telegramChatId,
+                    text: messageText
+                })
             });
 
-            if (lineResponse.ok) {
-                console.log('LINE 通知發送成功！');
+            if (tgResponse.ok) {
+                console.log('Telegram 通知發送成功！');
             } else {
-                const errText = await lineResponse.text();
-                console.error(`LINE 通知發送失敗，狀態碼: ${lineResponse.status}, 訊息: ${errText}`);
+                const errText = await tgResponse.text();
+                console.error(`Telegram 通知發送失敗，狀態碼: ${tgResponse.status}, 訊息: ${errText}`);
             }
 
             // 6.5 更新 Firebase 雲端資料 (包含 history 與 notified 機會列表)
