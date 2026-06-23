@@ -73,7 +73,89 @@ function calculateLastATR(data, period = 14) {
     return atr;
 }
 
-// 核心 SNR 分析邏輯 (整合 EMA 趨勢與 ATR 波動度)
+function calculateRSI(data, period = 14) {
+    const rsi = new Array(data.length).fill(null);
+    if (data.length <= period) return rsi;
+
+    let avgGain = 0;
+    let avgLoss = 0;
+
+    for (let i = 1; i <= period; i++) {
+        const change = data[i].close - data[i - 1].close;
+        if (change > 0) {
+            avgGain += change;
+        } else {
+            avgLoss += Math.abs(change);
+        }
+    }
+
+    avgGain /= period;
+    avgLoss /= period;
+
+    rsi[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
+
+    for (let i = period + 1; i < data.length; i++) {
+        const change = data[i].close - data[i - 1].close;
+        const gain = change > 0 ? change : 0;
+        const loss = change < 0 ? Math.abs(change) : 0;
+
+        avgGain = (avgGain * (period - 1) + gain) / period;
+        avgLoss = (avgLoss * (period - 1) + loss) / period;
+
+        rsi[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
+    }
+
+    return rsi;
+}
+
+function calculateMACD(data) {
+    const ema12 = calculateEMA(data, 12);
+    const ema26 = calculateEMA(data, 26);
+    
+    const macdLine = new Array(data.length).fill(null);
+    for (let i = 0; i < data.length; i++) {
+        if (ema12[i] !== null && ema26[i] !== null) {
+            macdLine[i] = ema12[i] - ema26[i];
+        }
+    }
+    
+    const signalLine = new Array(data.length).fill(null);
+    let firstValidIdx = -1;
+    for (let i = 0; i < data.length; i++) {
+        if (macdLine[i] !== null) {
+            firstValidIdx = i;
+            break;
+        }
+    }
+    
+    if (firstValidIdx === -1 || data.length < firstValidIdx + 9) {
+        return { macd: macdLine, signal: signalLine, hist: new Array(data.length).fill(null) };
+    }
+    
+    let sum = 0;
+    for (let i = 0; i < 9; i++) {
+        sum += macdLine[firstValidIdx + i];
+    }
+    let signalEMA = sum / 9;
+    signalLine[firstValidIdx + 8] = signalEMA;
+    
+    const multiplier = 2 / (9 + 1);
+    for (let i = firstValidIdx + 9; i < data.length; i++) {
+        signalEMA = (macdLine[i] - signalEMA) * multiplier + signalEMA;
+        signalLine[i] = signalEMA;
+    }
+    
+    const hist = new Array(data.length).fill(null);
+    for (let i = 0; i < data.length; i++) {
+        if (macdLine[i] !== null && signalLine[i] !== null) {
+            hist[i] = macdLine[i] - signalLine[i];
+        }
+    }
+    
+    return { macd: macdLine, signal: signalLine, hist };
+}
+
+// 核心 SNR 分析邏輯 (整合 EMA 趨勢、ATR 波動度、RSI與MACD多指標共振)
 function analyzeSNR(data, config = null) {
     const activeConfig = config || { emaPeriod: 50, atrMultiplier: 1.5 };
     const emaPeriod = activeConfig.emaPeriod || 50;
@@ -84,6 +166,13 @@ function analyzeSNR(data, config = null) {
     const lastEMA = emaVal[emaVal.length - 1];
     const prevEMA = emaVal[emaVal.length - 2];
     const lastATR = calculateLastATR(data, 14);
+
+    // 多指標共振計算
+    const rsiVal = calculateRSI(data, 14);
+    const lastRSI = rsiVal[rsiVal.length - 1];
+    const macdVal = calculateMACD(data);
+    const lastHist = macdVal.hist[macdVal.hist.length - 1];
+    const prevHist = macdVal.hist[macdVal.hist.length - 2];
 
     const pivots = [];
     for (let i = 2; i < data.length - 2; i++) {
@@ -179,6 +268,21 @@ function analyzeSNR(data, config = null) {
         }
     }
 
+    // === 多指標共振過濾 (RSI超買超賣過濾) ===
+    if (signal === 'LONG' && lastRSI !== null && lastRSI > 65) {
+        // 已超買，避免在支撐位追漲殺跌，過濾信號
+        signal = 'WATCH';
+        rr = 0;
+        sl = 0;
+        tp = 0;
+    } else if (signal === 'SHORT' && lastRSI !== null && lastRSI < 35) {
+        // 已超賣，避免在阻力位追跌殺漲，過濾信號
+        signal = 'WATCH';
+        rr = 0;
+        sl = 0;
+        tp = 0;
+    }
+
     // === 計算綜合勝率評估分數 (winRate) ===
     let winRate = 0.50; // 基礎勝率 50%
     if (signal !== 'WATCH') {
@@ -215,6 +319,30 @@ function analyzeSNR(data, config = null) {
             const precisionAdd = Math.min(Math.max((atrMultiplier - distRatio) * 0.04, -0.02), 0.06);
             winRate += precisionAdd;
         }
+
+        // 4. RSI 共振加分
+        if (signal === 'LONG' && lastRSI !== null && lastRSI < 40) {
+            winRate += 0.08; // 超跌回檔區做多，勝率提升
+        } else if (signal === 'SHORT' && lastRSI !== null && lastRSI > 60) {
+            winRate += 0.08; // 超漲反彈區做空，勝率提升
+        }
+
+        // 5. MACD 動能共振加減分
+        if (lastHist !== null && prevHist !== null) {
+            if (signal === 'LONG') {
+                if (lastHist > 0 || lastHist > prevHist) {
+                    winRate += 0.05; // 多頭動能增強，加分
+                } else if (lastHist < 0 && lastHist < prevHist) {
+                    winRate -= 0.05; // 仍在急跌段，扣分
+                }
+            } else if (signal === 'SHORT') {
+                if (lastHist < 0 || lastHist < prevHist) {
+                    winRate += 0.05; // 空頭動能增強，加分
+                } else if (lastHist > 0 && lastHist > prevHist) {
+                    winRate -= 0.05; // 仍在急漲段，扣分
+                }
+            }
+        }
     } else {
         winRate = 0.0;
     }
@@ -222,7 +350,7 @@ function analyzeSNR(data, config = null) {
     // 限制最終勝率在 35% ~ 75% 之間
     winRate = Math.min(Math.max(winRate, 0.35), 0.75);
 
-    return { levels, support, resistance, signal, rr, sl, tp, lastATR, winRate };
+    return { levels, support, resistance, signal, rr, sl, tp, lastATR, winRate, rsi: lastRSI, macdHist: lastHist };
 }
 
 // 主執行流程
