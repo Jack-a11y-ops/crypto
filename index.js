@@ -382,6 +382,14 @@ class SNRTracer {
             });
         }
 
+        // 歷史紀錄篩選狀態選單監聽
+        const filterStatusSelect = document.getElementById('history-filter-status');
+        if (filterStatusSelect) {
+            filterStatusSelect.addEventListener('change', () => {
+                this.renderHistory(false); // 僅重新渲染過濾
+            });
+        }
+
         // 模擬收益頁面篩選下拉選單監聽
         const eqFilterDir = document.getElementById('equity-filter-direction');
         if (eqFilterDir) {
@@ -1572,12 +1580,15 @@ class SNRTracer {
             history = [];
         }
 
-        // 取得篩選方向與週期設定
+        // 取得篩選方向、週期與狀態設定
         const filterDirSelect = document.getElementById('history-filter-direction');
         const selectedDir = filterDirSelect ? filterDirSelect.value : 'ALL';
         
         const filterIntervalSelect = document.getElementById('history-filter-interval');
         const selectedInterval = filterIntervalSelect ? filterIntervalSelect.value : 'ALL';
+
+        const filterStatusSelect = document.getElementById('history-filter-status');
+        const selectedStatus = filterStatusSelect ? filterStatusSelect.value : 'ALL';
         
         let filteredHistory = history;
         if (selectedDir !== 'ALL') {
@@ -1585,6 +1596,9 @@ class SNRTracer {
         }
         if (selectedInterval !== 'ALL') {
             filteredHistory = filteredHistory.filter(r => r.interval === selectedInterval);
+        }
+        if (selectedStatus !== 'ALL') {
+            filteredHistory = filteredHistory.filter(r => r.status === selectedStatus);
         }
 
         const total = filteredHistory.length;
