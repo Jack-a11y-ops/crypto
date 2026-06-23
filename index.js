@@ -46,7 +46,7 @@ class SNRTracer {
         this.bindEvents();
         this.initAuth(); // 啟動身份驗證流程
         this.requestNotificationPermission(); // 請求通知權限
-        this.initEmailJS(); // 初始化 EmailJS 設定
+        this.initLineConfig(); // 初始化 LINE Notify 設定
     }
 
     initChart() {
@@ -423,19 +423,36 @@ class SNRTracer {
             });
         }
 
-        // 儲存信箱設定按鈕監聽
-        const saveEmailConfigBtn = document.getElementById('save-email-config-btn');
-        if (saveEmailConfigBtn) {
-            saveEmailConfigBtn.addEventListener('click', () => {
-                this.saveEmailConfig();
+        // 儲存 LINE 設定按鈕監聽
+        const saveLineConfigBtn = document.getElementById('save-line-config-btn');
+        if (saveLineConfigBtn) {
+            saveLineConfigBtn.addEventListener('click', () => {
+                this.saveLineConfig();
             });
         }
 
-        // 測試發送郵件按鈕監聽
-        const testEmailBtn = document.getElementById('test-email-btn');
-        if (testEmailBtn) {
-            testEmailBtn.addEventListener('click', () => {
-                this.sendTestEmail();
+        // 測試 LINE 發送按鈕監聽
+        const testLineBtn = document.getElementById('test-line-btn');
+        if (testLineBtn) {
+            testLineBtn.addEventListener('click', () => {
+                this.sendTestLineNotification();
+            });
+        }
+
+        // LINE Token 顯示/隱藏切換監聽
+        const toggleTokenVisibilityBtn = document.getElementById('toggle-token-visibility-btn');
+        if (toggleTokenVisibilityBtn) {
+            toggleTokenVisibilityBtn.addEventListener('click', () => {
+                const tokenInput = document.getElementById('line-notify-token');
+                if (tokenInput) {
+                    if (tokenInput.type === 'password') {
+                        tokenInput.type = 'text';
+                        toggleTokenVisibilityBtn.innerText = '隱藏';
+                    } else {
+                        tokenInput.type = 'password';
+                        toggleTokenVisibilityBtn.innerText = '顯示';
+                    }
+                }
             });
         }
 
@@ -778,8 +795,8 @@ class SNRTracer {
                     if (cloudData.history) {
                         localStorage.setItem(`snr_history_${user.email}`, JSON.stringify(cloudData.history));
                     }
-                    if (cloudData.emailConfig) {
-                        localStorage.setItem(`snr_email_config_${user.email}`, JSON.stringify(cloudData.emailConfig));
+                    if (cloudData.lineConfig) {
+                        localStorage.setItem(`snr_line_config_${user.email}`, JSON.stringify(cloudData.lineConfig));
                     }
                     if (cloudData.strategyConfig) {
                         localStorage.setItem(`snr_strategy_config_${user.email}`, JSON.stringify(cloudData.strategyConfig));
@@ -808,10 +825,10 @@ class SNRTracer {
             }
         }
         
-        // 登入成功後載入自定義策略參數設定、虛擬帳戶與 EmailJS 設定
+        // 登入成功後載入自定義策略參數設定、虛擬帳戶與 LINE Notify 設定
         this.initStrategyConfig();
         this.initPaperAccount();
-        this.initEmailJS();
+        this.initLineConfig();
         
         // 登入成功後，主動依據當前 active tab 做切換與初始化渲染 (確保首頁預設為歷史紀錄時能自動加載數據)
         const activeTab = document.querySelector('.tab-btn.active');
@@ -1357,10 +1374,10 @@ class SNRTracer {
                 );
             });
 
-            // 5. 發送通知與去重檢測
+            // 5. 發送通知與顯示
             if (newOpportunities.length > 0) {
-                // 1. 發送 Email 通知
-                this.sendEmailNotification(newOpportunities);
+                // 1. 發送 LINE 通知
+                this.sendLineNotification(newOpportunities);
                 
                 // 2. 顯示系統桌面通知（內含提示音效）
                 if (newOpportunities.length === 1) {
@@ -3308,7 +3325,7 @@ class SNRTracer {
         if (!this.db || !this.currentUser) return;
         const email = this.currentUser.email;
         const historyKey = `snr_history_${email}`;
-        const configKey = `snr_email_config_${email}`;
+        const lineConfigKey = `snr_line_config_${email}`;
         const strategyConfigKey = `snr_strategy_config_${email}`;
         
         let history = [];
@@ -3318,11 +3335,11 @@ class SNRTracer {
             history = [];
         }
 
-        let emailConfig = {};
+        let lineConfig = {};
         try {
-            emailConfig = JSON.parse(localStorage.getItem(configKey) || '{}');
+            lineConfig = JSON.parse(localStorage.getItem(lineConfigKey) || '{}');
         } catch (e) {
-            emailConfig = {};
+            lineConfig = {};
         }
 
         let strategyConfig = {};
@@ -3339,7 +3356,7 @@ class SNRTracer {
                 lastSymbol: this.symbol,
                 lastInterval: this.interval,
                 history: history,
-                emailConfig: emailConfig,
+                lineConfig: lineConfig,
                 strategyConfig: strategyConfig,
                 paperBalance: this.paperBalance,
                 updatedAt: firebase.database.ServerValue.TIMESTAMP
@@ -3349,10 +3366,10 @@ class SNRTracer {
         }
     }
 
-    initEmailJS() {
+    initLineConfig() {
         if (!this.currentUser) return;
         const email = this.currentUser.email;
-        const configKey = `snr_email_config_${email}`;
+        const configKey = `snr_line_config_${email}`;
         let config = {};
         try {
             config = JSON.parse(localStorage.getItem(configKey) || '{}');
@@ -3360,19 +3377,8 @@ class SNRTracer {
             config = {};
         }
 
-        const emailTarget = document.getElementById('email-target');
-        const serviceId = document.getElementById('emailjs-service-id');
-        const templateId = document.getElementById('emailjs-template-id');
-        const publicKey = document.getElementById('emailjs-public-key');
-
-        if (emailTarget) emailTarget.value = config.emailTarget || '';
-        if (serviceId) serviceId.value = config.serviceId || '';
-        if (templateId) templateId.value = config.templateId || '';
-        if (publicKey) publicKey.value = config.publicKey || '';
-
-        if (config.publicKey && typeof emailjs !== 'undefined') {
-            emailjs.init(config.publicKey);
-        }
+        const tokenInput = document.getElementById('line-notify-token');
+        if (tokenInput) tokenInput.value = config.lineToken || '';
     }
 
     settlePaperTrade(record, finalStatus) {
@@ -3620,86 +3626,76 @@ class SNRTracer {
         }
     }
 
-    saveEmailConfig() {
+    saveLineConfig() {
         if (!this.currentUser) {
             alert('請先登入帳戶再儲存設定');
             return;
         }
 
-        const emailTarget = document.getElementById('email-target').value.trim();
-        const serviceId = document.getElementById('emailjs-service-id').value.trim();
-        const templateId = document.getElementById('emailjs-template-id').value.trim();
-        const publicKey = document.getElementById('emailjs-public-key').value.trim();
+        const lineToken = document.getElementById('line-notify-token').value.trim();
 
-        if (!emailTarget) {
-            alert('請填寫收信電子信箱');
+        if (!lineToken) {
+            alert('請填寫 LINE Notify 存取權杖 (Access Token)');
             return;
         }
 
         const email = this.currentUser.email;
-        const configKey = `snr_email_config_${email}`;
+        const configKey = `snr_line_config_${email}`;
         
         const config = {
-            emailTarget,
-            serviceId,
-            templateId,
-            publicKey
+            lineToken
         };
 
         localStorage.setItem(configKey, JSON.stringify(config));
 
-        if (publicKey && typeof emailjs !== 'undefined') {
-            emailjs.init(publicKey);
-        }
-
-        alert('信箱通知設定儲存成功！並已同步至雲端。');
+        alert('LINE Notify 設定儲存成功！並已同步至雲端。');
         this.syncToCloud();
     }
 
-    async sendTestEmail() {
+    async sendTestLineNotification() {
         if (!this.currentUser) {
-            alert('請先登入帳戶再測試發信');
+            alert('請先登入帳戶再測試發送');
             return;
         }
 
-        const emailTarget = document.getElementById('email-target').value.trim();
-        const serviceId = document.getElementById('emailjs-service-id').value.trim();
-        const templateId = document.getElementById('emailjs-template-id').value.trim();
-        const publicKey = document.getElementById('emailjs-public-key').value.trim();
+        const lineToken = document.getElementById('line-notify-token').value.trim();
 
-        if (!emailTarget || !serviceId || !templateId || !publicKey) {
-            alert('請完整填寫收信信箱、Service ID、Template ID 與 Public Key 再進行測試。');
+        if (!lineToken) {
+            alert('請填寫 LINE Notify 存取權杖 (Access Token) 再進行測試。');
             return;
         }
 
-        const testBtn = document.getElementById('test-email-btn');
+        const testBtn = document.getElementById('test-line-btn');
         testBtn.innerText = '發送中...';
         testBtn.disabled = true;
 
         try {
-            if (typeof emailjs !== 'undefined') {
-                emailjs.init(publicKey);
-                
-                const templateParams = {
-                    to_email: emailTarget,
-                    subject: '【SNR TRACER】測試發送郵件通知',
-                    message: `您好，這是一封來自 SNR TRACER 策略分析儀的測試信件。\n\n當前您的 EmailJS 設定正確無誤。當自動背景雷達監控到符合條件的優質交易機會時，您將會在此信箱收到通知。\n\n發送時間：${new Date().toLocaleString()}`
-                };
+            const corsProxy = 'https://corsproxy.io/?';
+            const targetUrl = 'https://notify-api.line.me/api/notify';
+            const proxyUrl = corsProxy + targetUrl;
+            
+            const messageText = `\n【SNR TRACER】測試發送\n您好，這是一條來自 SNR TRACER 策略分析儀的 LINE 測試通知！\n\n當前您的 LINE Notify 設定正確無誤。當自動掃描偵測到符合條件的交易機會時，您將會立刻收到通知。\n\n發送時間：${new Date().toLocaleString()}`;
 
-                const response = await emailjs.send(serviceId, templateId, templateParams);
-                if (response.status === 200) {
-                    alert('測試郵件發送成功！請檢查您的信箱（若沒看到，請檢查垃圾郵件匣）。');
-                } else {
-                    alert(`測試郵件發送失敗，狀態碼: ${response.status}`);
-                }
+            const response = await fetch(proxyUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${lineToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `message=${encodeURIComponent(messageText)}`
+            });
+
+            if (response.ok) {
+                alert('LINE 測試通知發送成功！請檢查您的 LINE 聊天室。');
             } else {
-                alert('EmailJS SDK 未載入成功，請重新整理網頁後重試。');
+                const errText = await response.text();
+                alert(`發送失敗，狀態碼: ${response.status}，訊息: ${errText}`);
             }
         } catch (error) {
-            console.error('EmailJS test mail failed:', error);
-            alert(`測試發信失敗: ${error.text || error.message || error}`);
+            console.error('LINE test notification failed:', error);
+            alert(`測試發送失敗: ${error.message || error}`);
         } finally {
-            testBtn.innerText = '測試發送郵件';
+            testBtn.innerText = '測試 LINE 發送';
             testBtn.disabled = false;
         }
     }
@@ -3761,10 +3757,10 @@ class SNRTracer {
         }
     }
 
-    async sendEmailNotification(newOpps) {
+    async sendLineNotification(newOpps) {
         if (!this.currentUser) return;
         const email = this.currentUser.email;
-        const configKey = `snr_email_config_${email}`;
+        const configKey = `snr_line_config_${email}`;
         
         let config = {};
         try {
@@ -3773,24 +3769,21 @@ class SNRTracer {
             return;
         }
 
-        const { emailTarget, serviceId, templateId, publicKey } = config;
+        const { lineToken } = config;
         
-        // 如果設定不完整，靜默跳過發信，只在控制台輸出
-        if (!emailTarget || !serviceId || !templateId || !publicKey) {
-            console.log('信箱通知設定不完整，跳過郵件發送');
-            return;
-        }
-
-        if (typeof emailjs === 'undefined') {
-            console.warn('EmailJS SDK 未載入，無法發送郵件');
+        // 如果設定不完整，靜默跳過發送，只在控制台輸出
+        if (!lineToken) {
+            console.log('LINE Notify 設定不完整，跳過通知發送');
             return;
         }
 
         try {
-            emailjs.init(publicKey);
+            const corsProxy = 'https://corsproxy.io/?';
+            const targetUrl = 'https://notify-api.line.me/api/notify';
+            const proxyUrl = corsProxy + targetUrl;
 
             // 格式化新發現的機會清單
-            let messageText = `親愛的 SNR TRACER 使用者，您好：\n\n系統剛剛於 ${new Date().toLocaleString()} 掃描出符合條件的高盈虧比 (R:R > 1.0) 交易機會！\n\n`;
+            let messageText = `\n【SNR TRACER】雷達發現 ${newOpps.length} 個交易機會！\n\n`;
             messageText += `雷達週期：${this.interval.toUpperCase()}\n\n`;
             messageText += `【新交易機會清單】:\n`;
             
@@ -3803,28 +3796,30 @@ class SNRTracer {
                     messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 勝率: ${(opp.winRate * 100).toFixed(0)}% 🔄\n`;
                     messageText += `   ⚠️ 說明：此機會之預估勝率優於您進行中的舊交易（舊信號: ${oldDirStr}${oldIntStr}，進場價: $${this.formatPrice(opp.oldEntry)}，舊勝率: ${(opp.oldWinRate * 100).toFixed(0)}%），系統已自動為您將舊交易【平倉】並替換為此新機會！\n\n`;
                 } else {
-                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 預估勝率: ${(opp.winRate * 100).toFixed(0)}% | 盈虧比: ${opp.rr.toFixed(2)}\n`;
+                    messageText += `${i + 1}. ${cleanSym}/USDT | 建議信號: ${dir} | 預估勝率: ${(opp.winRate * 100).toFixed(0)}% | 盈虧比: ${opp.rr.toFixed(2)}\n\n`;
                 }
             });
 
-            messageText += `\n請儘速前往 SNR TRACER 平台查看詳情與設定您的進出場防守點位！\n`;
-            messageText += `連結：http://localhost:8000\n\n`;
-            messageText += `*此信件為系統自動發送，請勿直接回覆。`;
+            messageText += `請儘速前往平台查看詳情與設定防守點位！\n`;
+            messageText += `連結：http://localhost:8000`;
 
-            const templateParams = {
-                to_email: emailTarget,
-                subject: `⚠️【SNR TRACER】雷達掃描到 ${newOpps.length} 個優質交易機會！`,
-                message: messageText
-            };
+            const response = await fetch(proxyUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${lineToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `message=${encodeURIComponent(messageText)}`
+            });
 
-            const response = await emailjs.send(serviceId, templateId, templateParams);
-            if (response.status === 200) {
-                console.log('交易機會 Email 郵件發送成功！');
+            if (response.ok) {
+                console.log('交易機會 LINE 通知發送成功！');
             } else {
-                console.warn('交易機會 Email 郵件發送失敗，狀態碼:', response.status);
+                const errText = await response.text();
+                console.warn('交易機會 LINE 通知發送失敗，狀態碼:', response.status, '錯誤:', errText);
             }
         } catch (error) {
-            console.error('發送機會信件出錯:', error);
+            console.error('發送機會 LINE 通知出錯:', error);
         }
     }
 }

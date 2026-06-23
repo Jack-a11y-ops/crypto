@@ -243,11 +243,11 @@ async function run() {
             process.exit(1);
         }
 
-        const emailConfig = userData.emailConfig || {};
-        const { emailTarget, serviceId, templateId, publicKey } = emailConfig;
+        const lineConfig = userData.lineConfig || {};
+        const { lineToken } = lineConfig;
 
-        if (!emailTarget || !serviceId || !templateId || !publicKey) {
-            console.warn('警告：信箱通知設定不完整。請先於網頁端「全市場雷達掃描」分頁中填寫並儲存設定。');
+        if (!lineToken) {
+            console.warn('警告：LINE Notify 通知設定不完整。請先於網頁端「全市場雷達掃描」分頁中填寫並儲存設定。');
             process.exit(0);
         }
 
@@ -261,7 +261,7 @@ async function run() {
         const riskRatio = strategyConfig.riskRatio || 30;
         let paperBalance = userData.paperBalance !== undefined ? parseFloat(userData.paperBalance) : 10000.0;
 
-        console.log(`設定加載成功。掃描週期: ${interval.toUpperCase()} | 接收信箱: ${emailTarget} | 策略參數: ${emaPeriod} EMA, ${atrMultiplier}x ATR, ${riskRatio}% 風險 | 虛擬餘額: ${paperBalance.toFixed(2)} USDT`);
+        console.log(`設定加載成功。掃描週期: ${interval.toUpperCase()} | LINE Token 已配置 | 策略參數: ${emaPeriod} EMA, ${atrMultiplier}x ATR, ${riskRatio}% 風險 | 虛擬餘額: ${paperBalance.toFixed(2)} USDT`);
 
         // 3. 獲取幣安前 50 大成交量 USDT 交易對
         console.log('正在從幣安獲取前 50 大成交量交易對...');
@@ -357,9 +357,9 @@ async function run() {
             }
         });
 
-        // 6. 如果有新機會，發送 Email 並同步更新歷史紀錄與已通知時間戳
+        // 6. 如果有新機會，發送 LINE 通知並同步更新歷史紀錄與已通知時間戳
         if (newOpportunities.length > 0) {
-            console.log(`發現 ${newOpportunities.length} 個新機會！準備發送 Email 通知...`);
+            console.log(`發現 ${newOpportunities.length} 個新機會！準備發送 LINE 通知...`);
 
             // 6.1 格式化郵件內文 (強制採用台灣時間 GMT+8)
             const taipeiTimeStr = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
@@ -458,43 +458,30 @@ async function run() {
             });
 
             messageText += `請儘速前往您的 SNR TRACER 平台查看詳情與設定防守點位！\n`;
-            messageText += `網址：http://localhost:8000\n\n`;
-            messageText += `*此信件為雲端自動發送，請勿直接回覆。`;
+            messageText += `網址：http://localhost:8000`;
 
             // 6.3 限制歷史紀錄長度最長為 100 筆
             if (history.length > 100) {
                 history = history.slice(0, 100);
             }
 
-            // 6.4 發送 EmailJS REST API 請求
-            const emailjsUrl = 'https://api.emailjs.com/api/v1.0/email/send';
-            const emailParams = {
-                service_id: serviceId,
-                template_id: templateId,
-                user_id: publicKey,
-                template_params: {
-                    to_email: emailTarget,
-                    subject: `⚠️【SNR TRACER】雲端雷達發現 ${newOpportunities.length} 個新交易機會！`,
-                    message: messageText
-                }
-            };
+            // 6.4 發送 LINE Notify API 請求
+            const lineNotifyUrl = 'https://notify-api.line.me/api/notify';
 
-            // 如果存在 Private Key (嚴格模式)，則附加 accessToken 進行安全發信
-            if (process.env.EMAILJS_PRIVATE_KEY) {
-                emailParams.accessToken = process.env.EMAILJS_PRIVATE_KEY;
-            }
-
-            const emailResponse = await fetch(emailjsUrl, {
+            const lineResponse = await fetch(lineNotifyUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(emailParams)
+                headers: {
+                    'Authorization': `Bearer ${lineToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `message=${encodeURIComponent(messageText)}`
             });
 
-            if (emailResponse.ok) {
-                console.log('Email 發送成功！');
+            if (lineResponse.ok) {
+                console.log('LINE 通知發送成功！');
             } else {
-                const errText = await emailResponse.text();
-                console.error(`Email 發送失敗，狀態碼: ${emailResponse.status}, 訊息: ${errText}`);
+                const errText = await lineResponse.text();
+                console.error(`LINE 通知發送失敗，狀態碼: ${lineResponse.status}, 訊息: ${errText}`);
             }
 
             // 6.5 更新 Firebase 雲端資料 (包含 history 與 notified 機會列表)
