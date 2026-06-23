@@ -3696,7 +3696,11 @@ class SNRTracer {
                 alert('Telegram 測試通知發送成功！請檢查您的 Telegram 聊天室。');
             } else {
                 const errText = await response.text();
-                alert(`發送失敗，狀態碼: ${response.status}，訊息: ${errText}`);
+                let friendlyMsg = `發送失敗，狀態碼: ${response.status}，訊息: ${errText}`;
+                if (errText.includes("chat not found")) {
+                    friendlyMsg += `\n\n💡 排除提示：\n1. 請確認您已在 Telegram 搜尋並點開您的機器人，並點擊了底部的「開始 (Start)」按鈕以啟動對話。\n2. 請確認 Chat ID 填寫的是您的個人數字 ID（可透過 @userinfobot 取得），而非 Telegram 使用者名稱。`;
+                }
+                alert(friendlyMsg);
             }
         } catch (error) {
             console.error('Telegram test notification failed:', error);
