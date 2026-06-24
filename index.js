@@ -3258,16 +3258,13 @@ class SNRTracer {
         // 控制回測匯出按鈕的顯示狀態
         const csvBtn = document.getElementById('export-backtest-csv-btn');
         const pdfBtn = document.getElementById('export-backtest-pdf-btn');
-        const tipText = document.getElementById('backtest-export-tip');
-        if (csvBtn && pdfBtn && tipText) {
+        if (csvBtn && pdfBtn) {
             if (trades.length > 0) {
                 csvBtn.style.display = 'inline-block';
                 pdfBtn.style.display = 'inline-block';
-                tipText.style.display = 'block';
             } else {
                 csvBtn.style.display = 'none';
                 pdfBtn.style.display = 'none';
-                tipText.style.display = 'none';
             }
         }
 
