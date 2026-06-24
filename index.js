@@ -34,6 +34,7 @@ class SNRTracer {
         this.backtestLineSeries = null; // 回測資金折線圖
         this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
         this.paperBalance = 10000.0;
+        this.priceUpdateTimer = null; // 背景自動更新價格定時器
 
         this.init();
     }
@@ -841,6 +842,9 @@ class SNRTracer {
         } else {
             this.showLoader(false); // 其他預設分頁不加載單幣分析，直接關閉加載動畫
         }
+
+        // 登入成功後啟動每 1 分鐘即時價格與持倉狀態自動更新
+        this.startPriceAutoUpdateTimer();
     }
 
     async fetchAndAnalyze(isInitial = false) {
@@ -4078,6 +4082,38 @@ class SNRTracer {
             }
         } catch (error) {
             console.error('發送機會 Telegram 通知出錯:', error);
+        }
+    }
+
+    startPriceAutoUpdateTimer() {
+        if (this.priceUpdateTimer) {
+            clearInterval(this.priceUpdateTimer);
+            this.priceUpdateTimer = null;
+        }
+
+        // 背景每 60 秒自動更新一次所有 PENDING 持倉的即時價格與結算狀態
+        this.priceUpdateTimer = setInterval(async () => {
+            if (!this.currentUser) return;
+            try {
+                console.log('背景自動更新即時價格與持倉狀態中...');
+                await this.checkHistorySettlement();
+                
+                // 如果目前處於模擬收益曲線分頁，同步更新相關圖表 UI
+                const activeTab = document.querySelector('.tab-btn.active');
+                if (activeTab && activeTab.dataset.tab === 'equity-curve-tab') {
+                    this.updateEquityCurveTab();
+                    this.updatePaperAccountUI();
+                }
+            } catch (err) {
+                console.error('背景自動更新價格出錯:', err);
+            }
+        }, 60 * 1000);
+    }
+
+    stopPriceAutoUpdateTimer() {
+        if (this.priceUpdateTimer) {
+            clearInterval(this.priceUpdateTimer);
+            this.priceUpdateTimer = null;
         }
     }
 }
