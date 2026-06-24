@@ -3465,39 +3465,36 @@ class SNRTracer {
 
                     const cleanSymbol = record.symbol.replace('USDT', '');
 
-                    // 1. 移動止損 (Break-even) 判定 (獲利達 1R 時，止損移至 Entry 保本點)
+                    let justTriggeredBE = false;
+                    let tempSl = record.sl;
+                    let tempIsBreakEven = record.isBreakEven;
+
+                    // 1. 移動止損 (Break-even) 預判定 (獲利達 1R 時，標記準備將止損移至 Entry 保本點)
                     if (!record.isBreakEven) {
                         if (record.type === 'LONG') {
                             if (high >= record.entry + oneRSpace) {
-                                record.sl = record.entry;
-                                record.isBreakEven = true;
-                                hasUpdates = true;
-                                
-                                this.showNotification(
-                                    `🛡️ 移動止損已啟用`,
-                                    `${cleanSymbol} LONG 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
-                                );
-                                this.sendTelegramBreakEvenNotification(record);
+                                tempSl = record.entry;
+                                tempIsBreakEven = true;
+                                justTriggeredBE = true;
                             }
                         } else if (record.type === 'SHORT') {
                             if (low <= record.entry - oneRSpace) {
-                                record.sl = record.entry;
-                                record.isBreakEven = true;
-                                hasUpdates = true;
-                                
-                                this.showNotification(
-                                    `🛡️ 移動止損已啟用`,
-                                    `${cleanSymbol} SHORT 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
-                                );
-                                this.sendTelegramBreakEvenNotification(record);
+                                tempSl = record.entry;
+                                tempIsBreakEven = true;
+                                justTriggeredBE = true;
                             }
                         }
                     }
 
-                    // 2. TP / SL 結算判定
+                    // 2. TP / SL 結算判定 (當根剛觸發保本時，止損判定仍使用初始止損 initialSl，避免當根 K 線震盪直接被保本平倉)
+                    const activeSl = justTriggeredBE ? initialSl : record.sl;
+
                     if (record.type === 'LONG') {
-                        if (low <= record.sl) {
+                        if (low <= activeSl) {
                             record.status = 'SL';
+                            // 同根 K 線若跌破 initialSl 則視為真實止損，不可算作保本
+                            record.isBreakEven = false;
+                            record.sl = initialSl;
                             this.settlePaperTrade(record, 'SL');
                             hasUpdates = true;
                             
@@ -3521,8 +3518,11 @@ class SNRTracer {
                             break;
                         }
                     } else if (record.type === 'SHORT') {
-                        if (high >= record.sl) {
+                        if (high >= activeSl) {
                             record.status = 'SL';
+                            // 同根 K 線若突破 initialSl 則視為真實止損，不可算作保本
+                            record.isBreakEven = false;
+                            record.sl = initialSl;
                             this.settlePaperTrade(record, 'SL');
                             hasUpdates = true;
                             
@@ -3545,6 +3545,19 @@ class SNRTracer {
                             this.sendTelegramSettlementNotification(record, 'TP');
                             break;
                         }
+                    }
+
+                    // 3. 若當根 K 線結束且未被平倉，正式寫入移動止損狀態並發送通知
+                    if (justTriggeredBE && record.status === 'PENDING') {
+                        record.sl = tempSl;
+                        record.isBreakEven = tempIsBreakEven;
+                        hasUpdates = true;
+
+                        this.showNotification(
+                            `🛡️ 移動止損已啟用`,
+                            `${cleanSymbol} ${record.type} 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
+                        );
+                        this.sendTelegramBreakEvenNotification(record);
                     }
                 }
 
