@@ -32,7 +32,7 @@ class SNRTracer {
         this.isDraggingSL = false; // 是否正在拖曳 SL 線
         this.backtestChart = null; // 回測資金曲線圖表
         this.backtestLineSeries = null; // 回測資金折線圖
-        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
+        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
         this.paperBalance = 10000.0;
         this.priceUpdateTimer = null; // 背景自動更新價格定時器
 
@@ -1741,26 +1741,23 @@ class SNRTracer {
             slPercent: slPercent,
             leverage: paperLeverage,
             margin: paperMargin,
-            positionValue: paperPositionValue
+            positionValue: paperPositionValue,
+            feeRate: this.strategyConfig.feeRate !== undefined ? this.strategyConfig.feeRate : 0.05,
+            slippage: this.strategyConfig.slippage !== undefined ? this.strategyConfig.slippage : 0.02
         };
 
         // 如果是替換舊交易，先為舊交易進行餘額盈虧結算
         if (replaceOld && oldPendingIndex !== -1) {
             const oldPending = history[oldPendingIndex];
             if (!oldPending.settledBalance) {
-                const oldPaperBalanceAtOpen = oldPending.paperBalanceAtOpen || this.paperBalance;
                 const oldInitialSl = oldPending.initialSl !== undefined ? oldPending.initialSl : oldPending.sl;
                 const oldRisk = Math.abs(oldPending.entry - oldInitialSl);
                 const pnlR = oldRisk > 0 ? (oldPending.type === 'LONG'
                     ? (entry - oldPending.entry) / oldRisk
                     : (oldPending.entry - entry) / oldRisk) : 0.0;
-                const profit = oldPaperBalanceAtOpen * 0.02 * pnlR;
                 
-                this.paperBalance = parseFloat(this.paperBalance) + profit;
-                localStorage.setItem(`snr_paper_balance_${email}`, this.paperBalance);
-                
-                oldPending.settledBalance = true;
-                oldPending.realizedProfit = profit;
+                oldPending.pnlR = pnlR;
+                this.settlePaperTrade(oldPending, 'CLOSED');
             }
         }
 
@@ -1829,115 +1826,36 @@ class SNRTracer {
                             ? (r.closePrice - r.entry) / risk 
                             : (r.entry - r.closePrice) / risk;
                     }
-                    if (pnlChange > 0) {
-                        winCount++;
-                    } else {
-                        lossCount++;
-                    }
-                } else {
-                    lossCount++;
-                }
-            }
-        });
-        
-        const winRate = settled.length > 0 ? `${((winCount / settled.length) * 100).toFixed(1)}%` : '--';
-
-        document.getElementById('history-stat-total').innerText = `${total} 筆`;
-        document.getElementById('history-stat-settled').innerText = `${settled.length} 筆`;
-        document.getElementById('history-stat-winrate').innerText = winRate;
-        document.getElementById('history-stat-ratio').innerText = `${winCount} / ${lossCount}`;
-
-        const historyList = document.getElementById('history-list');
-        if (!historyList) return;
-
-        if (filteredHistory.length === 0) {
-            historyList.innerHTML = `
-                <tr>
-                    <td colspan="7" style="text-align:center; padding: 40px; color: var(--text-muted);">
-                        ${(selectedDir === 'ALL' && selectedInterval === 'ALL') ? '暫無歷史分析紀錄。請在單幣詳細分析中搜尋並產生有效交易信號。' : '暫無符合篩選條件的歷史分析紀錄。'}
-                    </td>
-                </tr>
-            `;
-            return;
-        }
-
-        historyList.innerHTML = filteredHistory.map(r => {
-            let statusHTML = '';
-            if (r.status === 'PENDING') {
-                if (r.currentPrice !== undefined && r.percentChange !== undefined) {
-                    const percentStr = r.percentChange >= 0 ? `+${r.percentChange.toFixed(2)}%` : `${r.percentChange.toFixed(2)}%`;
-                    const percentClass = r.percentChange >= 0 ? 'text-green' : 'text-red';
-                    
-                    // 計算模擬交易的未實現盈虧
-                    let paperPnLHTML = '';
-                    if (r.paperBalanceAtOpen !== undefined && r.slPercent !== undefined) {
-                        const initialSl = r.initialSl !== undefined ? r.initialSl : r.sl;
-                        const risk = Math.abs(r.entry - initialSl);
-                        const pnlR = risk > 0 ? (r.type === 'LONG'
-                            ? (r.currentPrice - r.entry) / risk
-                            : (r.entry - r.currentPrice) / risk) : 0.0;
-                        const unrealProfit = r.paperBalanceAtOpen * 0.02 * pnlR;
-                        const unrealStr = unrealProfit >= 0 ? `+$${unrealProfit.toFixed(2)}` : `-$${Math.abs(unrealProfit).toFixed(2)}`;
-                        const unrealClass = unrealProfit >= 0 ? 'text-green' : 'text-red';
-                        paperPnLHTML = `未實現: <span class="${unrealClass}" style="font-weight: 700;">${unrealStr}</span><br>`;
-                    }
-
-                    statusHTML = `
-                        <span class="status-pill pending">進行中 ⏳</span>
-                        <div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">
-                            現價: $${this.formatPrice(r.currentPrice)}<br>
-                            漲跌: <span class="${percentClass}" style="font-weight: 700;">${percentStr}</span><br>
-                            ${paperPnLHTML}
-                        </div>
-                    `;
-                } else {
-                    statusHTML = `<span class="status-pill pending">進行中 ⏳</span>`;
-                }
-            } else if (r.status === 'TP') {
-                const profit = r.realizedProfit !== undefined ? r.realizedProfit : ((r.paperBalanceAtOpen || 10000) * 0.02 * (r.rr || 1.5));
-                const profitHTML = `<div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">收益: <span class="text-green" style="font-weight: 700;">+$${profit.toFixed(2)}</span></div>`;
-                statusHTML = `
-                    <span class="status-pill tp">已止盈 🎯</span>
-                    ${profitHTML}
-                `;
-            } else if (r.status === 'SL') {
-                const profit = r.realizedProfit !== undefined ? r.realizedProfit : -((r.paperBalanceAtOpen || 10000) * 0.02);
-                const profitHTML = `<div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">收益: <span class="text-red" style="font-weight: 700;">-$${Math.abs(profit).toFixed(2)}</span></div>`;
-                statusHTML = `
-                    <span class="status-pill sl">已止損 ❌</span>
-                    ${profitHTML}
-                `;
-            } else if (r.status === 'CLOSED') {
-                if (r.closePrice !== undefined && r.closePrice !== null) {
-                    const risk = Math.abs(r.entry - r.sl);
-                    let pnlChange = 0.0;
-                    if (risk > 0) {
-                        pnlChange = r.type === 'LONG' 
-                            ? (r.closePrice - r.entry) / risk 
-                            : (r.entry - r.closePrice) / risk;
-                    }
                     const pnlStr = pnlChange >= 0 ? `+${pnlChange.toFixed(2)} R` : `${pnlChange.toFixed(2)} R`;
                     const pnlClass = pnlChange >= 0 ? 'text-green' : 'text-red';
                     
                     const profit = r.realizedProfit !== undefined ? r.realizedProfit : ((r.paperBalanceAtOpen || 10000) * 0.02 * pnlChange);
-                    const profitStr = profit >= 0 ? `+$${profit.toFixed(2)}` : `-$${Math.abs(profit).toFixed(2)}`;
-                    const profitHTML = `金額: <span class="${pnlClass}" style="font-weight: 700;">${profitStr}</span><br>`;
+                    const profitStr = profit >= 0 ? `+${profit.toFixed(2)}` : `-${Math.abs(profit).toFixed(2)}`;
+                    let frictionHTML = '';
+                    if (r.frictionCost !== undefined) {
+                        frictionHTML = `<br>摩擦: <span style="color: var(--text-muted); font-size: 10px;">${r.frictionCost.toFixed(2)} USDT</span>`;
+                    }
+                    const profitHTML = `金額: <span class="${pnlClass}" style="font-weight: 700;">${profitStr}</span>${frictionHTML}<br>`;
 
                     statusHTML = `
                         <span class="status-pill closed">已平倉 🔄</span>
                         <div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">
-                            平倉價: $${this.formatPrice(r.closePrice)}<br>
+                            平倉價: ${this.formatPrice(r.closePrice)}<br>
                             收益: <span class="${pnlClass}" style="font-weight: 700;">${pnlStr}</span><br>
                             ${profitHTML}
                         </div>
                     `;
                 } else {
                     const profit = r.realizedProfit !== undefined ? r.realizedProfit : -((r.paperBalanceAtOpen || 10000) * 0.02);
+                    let frictionHTML = '';
+                    if (r.frictionCost !== undefined) {
+                        frictionHTML = `<br>摩擦: <span style="color: var(--text-muted); font-size: 10px;">${r.frictionCost.toFixed(2)} USDT</span>`;
+                    }
                     statusHTML = `
                         <span class="status-pill closed">已平倉 🔄</span>
                         <div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">
                             收益: <span class="text-red" style="font-weight: 700;">-1.00 R</span><br>
-                            金額: <span class="text-red" style="font-weight: 700;">-$${Math.abs(profit).toFixed(2)}</span>
+                            金額: <span class="text-red" style="font-weight: 700;">-${Math.abs(profit).toFixed(2)}</span>${frictionHTML}
                         </div>
                     `;
                 }
@@ -2621,6 +2539,15 @@ class SNRTracer {
 
     // 無副作用之單次策略回測計算，方便常規回測與參數最佳化網格搜尋複用
     evaluateStrategy(klines, symbol, config = null) {
+        const activeConfig = config || this.strategyConfig || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
+        const feeRate = activeConfig.feeRate !== undefined ? activeConfig.feeRate : 0.05;
+        const slippage = activeConfig.slippage !== undefined ? activeConfig.slippage : 0.02;
+
+        const getFriction = (trade) => {
+            const slPercent = (Math.abs(trade.entry - trade.sl) / trade.entry) * 100;
+            return slPercent > 0 ? (2 * (feeRate + slippage) / slPercent) : 0;
+        };
+
         const trades = [];
         let activeTrade = null;
 
@@ -2651,7 +2578,10 @@ class SNRTracer {
                         activeTrade.status = 'CLOSED';
                         activeTrade.closePrice = closePrice;
                         activeTrade.closeTime = currentK.openTime;
-                        activeTrade.pnl = pnl;
+                        
+                        const frictionR = getFriction(activeTrade);
+                        activeTrade.frictionR = frictionR;
+                        activeTrade.pnl = pnl - frictionR;
                         
                         trades.push({ ...activeTrade });
 
@@ -2676,21 +2606,27 @@ class SNRTracer {
                         activeTrade.status = 'SL';
                         activeTrade.closePrice = activeTrade.sl;
                         activeTrade.closeTime = currentK.openTime;
-                        activeTrade.pnl = -1.0;
+                        const frictionR = getFriction(activeTrade);
+                        activeTrade.frictionR = frictionR;
+                        activeTrade.pnl = -1.0 - frictionR;
                         trades.push({ ...activeTrade });
                         activeTrade = null;
                     } else if (currentK.low <= activeTrade.sl) {
                         activeTrade.status = 'SL';
                         activeTrade.closePrice = activeTrade.sl;
                         activeTrade.closeTime = currentK.openTime;
-                        activeTrade.pnl = -1.0;
+                        const frictionR = getFriction(activeTrade);
+                        activeTrade.frictionR = frictionR;
+                        activeTrade.pnl = -1.0 - frictionR;
                         trades.push({ ...activeTrade });
                         activeTrade = null;
                     } else if (currentK.high >= activeTrade.tp) {
                         activeTrade.status = 'TP';
                         activeTrade.closePrice = activeTrade.tp;
                         activeTrade.closeTime = currentK.openTime;
-                        activeTrade.pnl = activeTrade.rr;
+                        const frictionR = getFriction(activeTrade);
+                        activeTrade.frictionR = frictionR;
+                        activeTrade.pnl = activeTrade.rr - frictionR;
                         trades.push({ ...activeTrade });
                         activeTrade = null;
                     }
@@ -2699,21 +2635,27 @@ class SNRTracer {
                         activeTrade.status = 'SL';
                         activeTrade.closePrice = activeTrade.sl;
                         activeTrade.closeTime = currentK.openTime;
-                        activeTrade.pnl = -1.0;
+                        const frictionR = getFriction(activeTrade);
+                        activeTrade.frictionR = frictionR;
+                        activeTrade.pnl = -1.0 - frictionR;
                         trades.push({ ...activeTrade });
                         activeTrade = null;
                     } else if (currentK.high >= activeTrade.sl) {
                         activeTrade.status = 'SL';
                         activeTrade.closePrice = activeTrade.sl;
                         activeTrade.closeTime = currentK.openTime;
-                        activeTrade.pnl = -1.0;
+                        const frictionR = getFriction(activeTrade);
+                        activeTrade.frictionR = frictionR;
+                        activeTrade.pnl = -1.0 - frictionR;
                         trades.push({ ...activeTrade });
                         activeTrade = null;
                     } else if (currentK.low <= activeTrade.tp) {
                         activeTrade.status = 'TP';
                         activeTrade.closePrice = activeTrade.tp;
                         activeTrade.closeTime = currentK.openTime;
-                        activeTrade.pnl = activeTrade.rr;
+                        const frictionR = getFriction(activeTrade);
+                        activeTrade.frictionR = frictionR;
+                        activeTrade.pnl = activeTrade.rr - frictionR;
                         trades.push({ ...activeTrade });
                         activeTrade = null;
                     }
@@ -2749,7 +2691,9 @@ class SNRTracer {
             activeTrade.status = 'CLOSED';
             activeTrade.closePrice = closePrice;
             activeTrade.closeTime = finalK.openTime;
-            activeTrade.pnl = pnl;
+            const frictionR = getFriction(activeTrade);
+            activeTrade.frictionR = frictionR;
+            activeTrade.pnl = pnl - frictionR;
             trades.push({ ...activeTrade });
             activeTrade = null;
         }
@@ -3909,14 +3853,24 @@ class SNRTracer {
             pnlR = record.rr || 1.5;
         } else if (finalStatus === 'SL') {
             pnlR = record.isBreakEven ? 0.0 : -1.0;
+        } else if (finalStatus === 'CLOSED') {
+            pnlR = record.pnlR !== undefined ? record.pnlR : 0.0;
         }
 
-        const profit = paperBalanceAtOpen * 0.02 * pnlR;
+        const feeRate = record.feeRate !== undefined ? record.feeRate : (this.strategyConfig.feeRate !== undefined ? this.strategyConfig.feeRate : 0.05);
+        const slippage = record.slippage !== undefined ? record.slippage : (this.strategyConfig.slippage !== undefined ? this.strategyConfig.slippage : 0.02);
+        const slPercent = record.slPercent !== undefined ? record.slPercent : (record.entry && record.sl ? (Math.abs(record.entry - record.sl) / record.entry) * 100 : 0);
+        const frictionR = slPercent > 0 ? (2 * (feeRate + slippage) / slPercent) : 0;
+        const actualPnLR = pnlR - frictionR;
+
+        const profit = paperBalanceAtOpen * 0.02 * actualPnLR;
         this.paperBalance = parseFloat(this.paperBalance) + profit;
         localStorage.setItem(`snr_paper_balance_${email}`, this.paperBalance);
 
         record.settledBalance = true;
         record.realizedProfit = profit;
+        record.frictionCost = paperBalanceAtOpen * 0.02 * frictionR;
+        record.frictionR = frictionR;
     }
 
     initPaperAccount() {
@@ -4034,29 +3988,35 @@ class SNRTracer {
         if (!this.currentUser) return;
         const email = this.currentUser.email;
         const configKey = `snr_strategy_config_${email}`;
-        let config = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
+        let config = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
         try {
             const localConfig = localStorage.getItem(configKey);
             if (localConfig) {
                 config = JSON.parse(localConfig);
             }
         } catch (e) {
-            config = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
+            config = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
         }
 
         this.strategyConfig = {
             emaPeriod: config.emaPeriod || 50,
             atrMultiplier: config.atrMultiplier || 1.5,
-            riskRatio: config.riskRatio || 30
+            riskRatio: config.riskRatio || 30,
+            feeRate: config.feeRate !== undefined ? config.feeRate : 0.05,
+            slippage: config.slippage !== undefined ? config.slippage : 0.02
         };
 
         const emaInput = document.getElementById('strategy-ema-period');
         const atrInput = document.getElementById('strategy-atr-multiplier');
         const riskInput = document.getElementById('strategy-risk-ratio');
+        const feeInput = document.getElementById('strategy-fee-rate');
+        const slippageInput = document.getElementById('strategy-slippage');
 
         if (emaInput) emaInput.value = this.strategyConfig.emaPeriod;
         if (atrInput) atrInput.value = this.strategyConfig.atrMultiplier;
         if (riskInput) riskInput.value = this.strategyConfig.riskRatio;
+        if (feeInput) feeInput.value = this.strategyConfig.feeRate;
+        if (slippageInput) slippageInput.value = this.strategyConfig.slippage;
 
         // 同步槓桿計算器的虧損比例
         const lossRatioEl = document.getElementById('calc-loss-ratio');
@@ -4088,10 +4048,14 @@ class SNRTracer {
         const emaPeriodVal = document.getElementById('strategy-ema-period').value.trim();
         const atrMultiplierVal = document.getElementById('strategy-atr-multiplier').value.trim();
         const riskRatioVal = document.getElementById('strategy-risk-ratio').value.trim();
+        const feeRateVal = document.getElementById('strategy-fee-rate').value.trim();
+        const slippageVal = document.getElementById('strategy-slippage').value.trim();
 
         const emaPeriod = parseInt(emaPeriodVal);
         const atrMultiplier = parseFloat(atrMultiplierVal);
         const riskRatio = parseInt(riskRatioVal);
+        const feeRate = parseFloat(feeRateVal);
+        const slippage = parseFloat(slippageVal);
 
         if (isNaN(emaPeriod) || emaPeriod < 5 || emaPeriod > 300) {
             alert('EMA 週期必須是 5 到 300 之間的整數');
@@ -4105,6 +4069,14 @@ class SNRTracer {
             alert('預設風險比例必須是 5% 到 100% 之間的整數');
             return;
         }
+        if (isNaN(feeRate) || feeRate < 0.0 || feeRate > 1.0) {
+            alert('交易手續費率必須是 0% 到 1% 之間的數值');
+            return;
+        }
+        if (isNaN(slippage) || slippage < 0.0 || slippage > 2.0) {
+            alert('預期滑價比例必須是 0% 到 2% 之間的數值');
+            return;
+        }
 
         const email = this.currentUser.email;
         const configKey = `snr_strategy_config_${email}`;
@@ -4112,7 +4084,9 @@ class SNRTracer {
         this.strategyConfig = {
             emaPeriod,
             atrMultiplier,
-            riskRatio
+            riskRatio,
+            feeRate,
+            slippage
         };
 
         localStorage.setItem(configKey, JSON.stringify(this.strategyConfig));

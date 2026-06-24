@@ -9,6 +9,8 @@ if (typeof fetch === 'undefined') {
     process.exit(1);
 }
 
+let globalStrategyConfig = null;
+
 // 1. 環境變數檢測
 const userEmail = process.env.USER_EMAIL;
 if (!userEmail) {
@@ -576,11 +578,21 @@ function settleCloudPaperTrade(record, finalStatus, currentPaperBalance) {
         pnlR = record.rr || 1.5;
     } else if (finalStatus === 'SL') {
         pnlR = record.isBreakEven ? 0.0 : -1.0;
+    } else if (finalStatus === 'CLOSED') {
+        pnlR = record.pnlR !== undefined ? record.pnlR : 0.0;
     }
 
-    const profit = paperBalanceAtOpen * 0.02 * pnlR;
+    const feeRate = record.feeRate !== undefined ? record.feeRate : (globalStrategyConfig && globalStrategyConfig.feeRate !== undefined ? globalStrategyConfig.feeRate : 0.05);
+    const slippage = record.slippage !== undefined ? record.slippage : (globalStrategyConfig && globalStrategyConfig.slippage !== undefined ? globalStrategyConfig.slippage : 0.02);
+    const slPercent = record.slPercent !== undefined ? record.slPercent : (record.entry && record.sl ? (Math.abs(record.entry - record.sl) / record.entry) * 100 : 0);
+    const frictionR = slPercent > 0 ? (2 * (feeRate + slippage) / slPercent) : 0;
+    const actualPnLR = pnlR - frictionR;
+
+    const profit = paperBalanceAtOpen * 0.02 * actualPnLR;
     record.settledBalance = true;
     record.realizedProfit = profit;
+    record.frictionCost = paperBalanceAtOpen * 0.02 * frictionR;
+    record.frictionR = frictionR;
     return profit;
 }
 
@@ -653,7 +665,8 @@ async function run() {
         let history = userData.history || [];
         let notified = userData.notified || {};
         
-        const strategyConfig = userData.strategyConfig || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
+        const strategyConfig = userData.strategyConfig || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
+        globalStrategyConfig = strategyConfig;
         const emaPeriod = strategyConfig.emaPeriod || 50;
         const atrMultiplier = strategyConfig.atrMultiplier || 1.5;
         const riskRatio = strategyConfig.riskRatio || 30;
@@ -807,16 +820,15 @@ async function run() {
                         oldRecord.closePrice = opp.lastPrice; // 平倉價為新交易的 entry 價格 (即當前現價)
                         
                         if (!oldRecord.settledBalance) {
-                            const oldPaperBalanceAtOpen = oldRecord.paperBalanceAtOpen !== undefined ? oldRecord.paperBalanceAtOpen : paperBalance;
                             const oldInitialSl = oldRecord.initialSl !== undefined ? oldRecord.initialSl : oldRecord.sl;
                             const oldRisk = Math.abs(oldRecord.entry - oldInitialSl);
                             const pnlR = oldRisk > 0 ? (oldRecord.type === 'LONG'
                                 ? (opp.lastPrice - oldRecord.entry) / oldRisk
                                 : (oldRecord.entry - opp.lastPrice) / oldRisk) : 0.0;
-                            const profit = oldPaperBalanceAtOpen * 0.02 * pnlR;
+                            
+                            oldRecord.pnlR = pnlR;
+                            const profit = settleCloudPaperTrade(oldRecord, 'CLOSED', paperBalance);
                             paperBalance = parseFloat(paperBalance) + profit;
-                            oldRecord.settledBalance = true;
-                            oldRecord.realizedProfit = profit;
                         }
                     }
                 }
@@ -869,7 +881,9 @@ async function run() {
                         slPercent: slPercent,
                         leverage: paperLeverage,
                         margin: paperMargin,
-                        positionValue: paperPositionValue
+                        positionValue: paperPositionValue,
+                        feeRate: strategyConfig.feeRate !== undefined ? strategyConfig.feeRate : 0.05,
+                        slippage: strategyConfig.slippage !== undefined ? strategyConfig.slippage : 0.02
                     });
                 }
             });

@@ -215,6 +215,14 @@
                             <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">建議槓桿預設風險比例 % (預設 30)</label>
                             <input type="number" id="strategy-risk-ratio" placeholder="例如: 30" min="5" max="100" step="1" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
                         </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">交易手續費率 % (預設 0.05)</label>
+                            <input type="number" id="strategy-fee-rate" placeholder="例如: 0.05" min="0.00" max="1.00" step="0.01" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">預期滑價比例 % (預設 0.02)</label>
+                            <input type="number" id="strategy-slippage" placeholder="例如: 0.02" min="0.00" max="2.00" step="0.01" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                        </div>
                     </div>
                     <div style="margin-top: 15px;">
                         <button id="save-strategy-config-btn" class="primary-btn-sm" style="width: auto; padding: 8px 20px;">儲存策略設定</button>
