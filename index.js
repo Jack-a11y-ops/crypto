@@ -3744,7 +3744,7 @@ class SNRTracer {
         }
     }
 
-    async syncToCloud() {
+    async syncToCloud(forceLocalBalance = false) {
         if (!this.db || !this.currentUser) return;
         const email = this.currentUser.email;
         const historyKey = `snr_history_${email}`;
@@ -3776,7 +3776,7 @@ class SNRTracer {
             const safeEmail = email.replace(/\./g, '_');
             const dbRef = this.db.ref('users/' + safeEmail);
             
-            // 1. 先從 Firebase 雲端載入最新的歷史紀錄與餘額，避免直接覆蓋抹除雲端(GitHub Actions)產生的機會
+            // 1. 先從 Firebase 雲端載入最新的歷史紀錄與餘額，避免直接覆蓋抹端(GitHub Actions)產生的機會
             const snapshot = await dbRef.once('value');
             let cloudHistory = [];
             let cloudPaperBalance = this.paperBalance;
@@ -3788,12 +3788,12 @@ class SNRTracer {
                 }
             }
 
-            // 2. 合併本地與雲端歷史紀錄
-            const mergedHistory = this.mergeHistory(localHistory, cloudHistory);
+            // 2. 合併本地與雲端歷史紀錄 (若 forceLocalBalance 則強制採用本地歷史，通常用於清空歷史重置)
+            const mergedHistory = forceLocalBalance ? localHistory : this.mergeHistory(localHistory, cloudHistory);
 
-            // 3. 處理模擬餘額的同步 (若本地在此次分析中無狀態改變，則以雲端最新的餘額為準)
+            // 3. 處理模擬餘額的同步 (若本地在此次分析中無狀態改變，則以雲端最新的餘額為準；若 forceLocalBalance 則以本地重置餘額為準)
             let finalPaperBalance = this.paperBalance;
-            if (snapshot.exists()) {
+            if (!forceLocalBalance && snapshot.exists()) {
                 const cloudData = snapshot.val();
                 if (cloudData.paperBalance !== undefined) {
                     const localHasUpdates = localHistory.some((lh) => {
@@ -3813,8 +3813,8 @@ class SNRTracer {
             const mergedHistStr = JSON.stringify(mergedHistory);
             const cloudHistStr = JSON.stringify(cloudHistory);
             
-            const hasHistoryChange = localHistStr !== mergedHistStr || cloudHistStr !== mergedHistStr;
-            const hasBalanceChange = finalPaperBalance !== cloudPaperBalance;
+            const hasHistoryChange = localHistStr !== mergedHistStr || cloudHistStr !== mergedHistStr || forceLocalBalance;
+            const hasBalanceChange = finalPaperBalance !== cloudPaperBalance || forceLocalBalance;
 
             // 只要本地與合併結果不同，就將最新歷史紀錄存入 localStorage 並渲染 UI
             if (localHistStr !== mergedHistStr) {
@@ -4013,7 +4013,7 @@ class SNRTracer {
         
         this.updatePaperAccountUI();
         this.renderHistory(false);
-        await this.syncToCloud();
+        await this.syncToCloud(true);
     }
 
     initStrategyConfig() {
