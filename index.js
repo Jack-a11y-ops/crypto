@@ -3459,6 +3459,10 @@ class SNRTracer {
                     hasUpdates = true;
                 }
 
+                // 每次歷史回溯重播前，先將狀態重置為開倉初始狀態，防止已觸發保本的狀態殘留導致歷史誤判
+                record.sl = initialSl;
+                record.isBreakEven = false;
+
                 // 遍歷 K 線進行結算與移動止損檢測
                 for (let k = 0; k < klines.length; k++) {
                     const klineOpenTime = klines[k][0];

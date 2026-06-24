@@ -394,6 +394,10 @@ async function checkCloudHistorySettlement(history, paperBalance, telegramToken,
                 hasUpdates = true;
             }
 
+            // 每次歷史回溯重播前，先將狀態重置為開倉初始狀態，防止已觸發保本的狀態殘留導致歷史誤判
+            record.sl = initialSl;
+            record.isBreakEven = false;
+
             for (let k = 0; k < klines.length; k++) {
                 const klineOpenTime = klines[k][0];
                 // 改為小於 record.id，跳過與開倉時間重疊的那根 K 線，防範進場前開盤之歷史插針誤判
