@@ -339,12 +339,27 @@ class SNRTracer {
         // 清除歷史紀錄按鈕監聽
         const clearHistoryBtn = document.getElementById('clear-history-btn');
         if (clearHistoryBtn) {
-            clearHistoryBtn.addEventListener('click', () => {
+            clearHistoryBtn.addEventListener('click', async () => {
                 if (this.currentUser) {
                     if (confirm('確定要清除所有歷史分析紀錄嗎？此動作無法復原。')) {
-                        localStorage.removeItem(`snr_history_${this.currentUser.email}`);
+                        const email = this.currentUser.email;
+                        localStorage.removeItem(`snr_history_${email}`);
                         this.renderHistory();
-                        this.syncToCloud(); // 清除後同步至雲端
+                        
+                        // 精準清空雲端的 history 節點，防止合併同步時再次拉回
+                        if (this.db) {
+                            try {
+                                const safeEmail = email.replace(/\./g, '_');
+                                await this.db.ref(`users/${safeEmail}`).update({
+                                    history: [],
+                                    updatedAt: firebase.database.ServerValue.TIMESTAMP
+                                });
+                                console.log('已成功清空雲端資料庫歷史紀錄！');
+                            } catch (e) {
+                                console.error('清空雲端歷史紀錄失敗:', e);
+                            }
+                        }
+                        this.updatePaperAccountUI();
                     }
                 }
             });
@@ -1943,29 +1958,55 @@ class SNRTracer {
         }
     }
 
-    deleteHistoryRecord(id) {
+    async deleteHistoryRecord(id) {
         if (!this.currentUser) return;
         const email = this.currentUser.email;
         const historyKey = `snr_history_${email}`;
-        let history = [];
+        let localHistory = [];
         try {
-            history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+            localHistory = JSON.parse(localStorage.getItem(historyKey) || '[]');
         } catch (e) {
-            history = [];
+            localHistory = [];
         }
 
-        const recordIndex = history.findIndex(r => r.id === id);
-        if (recordIndex !== -1) {
-            const record = history[recordIndex];
-            if (confirm(`確定要刪除 ${record.symbol.replace('USDT', '')} (${record.interval.toUpperCase()}) 的這筆歷史分析紀錄嗎？`)) {
-                history.splice(recordIndex, 1);
-                localStorage.setItem(historyKey, JSON.stringify(history));
+        const recordIndex = localHistory.findIndex(r => r.id === id);
+        if (recordIndex === -1) return;
+
+        const record = localHistory[recordIndex];
+        if (!confirm(`確定要刪除 ${record.symbol.replace('USDT', '')} (${record.interval.toUpperCase()}) 的這筆歷史分析紀錄嗎？`)) {
+            return;
+        }
+
+        // 1. 本地先移除並更新 UI
+        localHistory.splice(recordIndex, 1);
+        localStorage.setItem(historyKey, JSON.stringify(localHistory));
+        this.renderHistory(false);
+        this.updatePaperAccountUI();
+
+        // 2. 精準從 Firebase 中讀取、移除並寫回，防止 mergeHistory 把它重新拉回來
+        if (this.db) {
+            try {
+                const safeEmail = email.replace(/\./g, '_');
+                const dbRef = this.db.ref(`users/${safeEmail}`);
                 
-                // 重新渲染歷史紀錄，不需重新發起 API 結算查詢
-                this.renderHistory(false);
-                
-                // 異步同步至雲端資料庫
-                this.syncToCloud();
+                // 讀取最新的雲端歷史紀錄
+                const snapshot = await dbRef.once('value');
+                if (snapshot.exists()) {
+                    const cloudData = snapshot.val();
+                    let cloudHistory = cloudData.history || [];
+                    
+                    // 移除對應 id 的紀錄
+                    cloudHistory = cloudHistory.filter(r => r.id !== id);
+                    
+                    // 寫回雲端
+                    await dbRef.update({
+                        history: cloudHistory,
+                        updatedAt: firebase.database.ServerValue.TIMESTAMP
+                    });
+                    console.log(`已成功從雲端資料庫精準移除交易紀錄: ${id}`);
+                }
+            } catch (err) {
+                console.error("精準移除雲端交易紀錄失敗:", err);
             }
         }
     }
