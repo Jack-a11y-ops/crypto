@@ -3462,7 +3462,8 @@ class SNRTracer {
                 // 遍歷 K 線進行結算與移動止損檢測
                 for (let k = 0; k < klines.length; k++) {
                     const klineOpenTime = klines[k][0];
-                    if (klineOpenTime + intervalMs < record.id) continue;
+                    // 改為小於 record.id，跳過與開倉時間重疊的那根 K 線，防範進場前開盤之歷史插針誤判
+                    if (klineOpenTime < record.id) continue;
 
                     const high = parseFloat(klines[k][2]);
                     const low = parseFloat(klines[k][3]);
@@ -3562,6 +3563,87 @@ class SNRTracer {
                             `${cleanSymbol} ${record.type} 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
                         );
                         this.sendTelegramBreakEvenNotification(record);
+                    }
+                }
+
+                // 4. 當前最新價格 (currentPrice) 的即時 TP/SL 與移動止損判定，補足當前未完結 K 線的最新波動
+                if (record.status === 'PENDING') {
+                    const cleanSymbol = record.symbol.replace('USDT', '');
+                    
+                    // (A) 移動止損即時判定
+                    if (!record.isBreakEven) {
+                        if (record.type === 'LONG') {
+                            if (currentPrice >= record.entry + oneRSpace) {
+                                record.sl = record.entry;
+                                record.isBreakEven = true;
+                                hasUpdates = true;
+                                
+                                this.showNotification(
+                                    `🛡️ 移動止損已啟用`,
+                                    `${cleanSymbol} LONG 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
+                                );
+                                this.sendTelegramBreakEvenNotification(record);
+                            }
+                        } else if (record.type === 'SHORT') {
+                            if (currentPrice <= record.entry - oneRSpace) {
+                                record.sl = record.entry;
+                                record.isBreakEven = true;
+                                hasUpdates = true;
+                                
+                                this.showNotification(
+                                    `🛡️ 移動止損已啟用`,
+                                    `${cleanSymbol} SHORT 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
+                                );
+                                this.sendTelegramBreakEvenNotification(record);
+                            }
+                        }
+                    }
+
+                    // (B) TP / SL 即時判定
+                    if (record.type === 'LONG') {
+                        if (currentPrice <= record.sl) {
+                            record.status = 'SL';
+                            this.settlePaperTrade(record, 'SL');
+                            hasUpdates = true;
+                            
+                            this.showNotification(
+                                `❌ 交易已結算 (Stop Loss)`,
+                                `${cleanSymbol} LONG 交易已被止損於 $${this.formatPrice(record.sl)}。`
+                            );
+                            this.sendTelegramSettlementNotification(record, 'SL');
+                        } else if (currentPrice >= record.tp) {
+                            record.status = 'TP';
+                            this.settlePaperTrade(record, 'TP');
+                            hasUpdates = true;
+                            
+                            this.showNotification(
+                                `🎯 交易已結算 (Take Profit)`,
+                                `${cleanSymbol} LONG 交易已成功止盈於 $${this.formatPrice(record.tp)}！`
+                            );
+                            this.sendTelegramSettlementNotification(record, 'TP');
+                        }
+                    } else if (record.type === 'SHORT') {
+                        if (currentPrice >= record.sl) {
+                            record.status = 'SL';
+                            this.settlePaperTrade(record, 'SL');
+                            hasUpdates = true;
+                            
+                            this.showNotification(
+                                `❌ 交易已結算 (Stop Loss)`,
+                                `${cleanSymbol} SHORT 交易已被止損於 $${this.formatPrice(record.sl)}。`
+                            );
+                            this.sendTelegramSettlementNotification(record, 'SL');
+                        } else if (currentPrice <= record.tp) {
+                            record.status = 'TP';
+                            this.settlePaperTrade(record, 'TP');
+                            hasUpdates = true;
+                            
+                            this.showNotification(
+                                `🎯 交易已結算 (Take Profit)`,
+                                `${cleanSymbol} SHORT 交易已成功止盈於 $${this.formatPrice(record.tp)}！`
+                            );
+                            this.sendTelegramSettlementNotification(record, 'TP');
+                        }
                     }
                 }
 

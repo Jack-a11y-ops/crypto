@@ -396,7 +396,8 @@ async function checkCloudHistorySettlement(history, paperBalance, telegramToken,
 
             for (let k = 0; k < klines.length; k++) {
                 const klineOpenTime = klines[k][0];
-                if (klineOpenTime + intervalMs < record.id) continue;
+                // 改為小於 record.id，跳過與開倉時間重疊的那根 K 線，防範進場前開盤之歷史插針誤判
+                if (klineOpenTime < record.id) continue;
 
                 const high = parseFloat(klines[k][2]);
                 const low = parseFloat(klines[k][3]);
@@ -482,6 +483,71 @@ async function checkCloudHistorySettlement(history, paperBalance, telegramToken,
                     await sendCloudTelegramAlert(telegramToken, telegramChatId, 
                         `🛡️【移動止損保本警報】\n\n您的 ${cleanSymbol} ${record.type} 交易已獲利達到 1R 空間！\n\n系統已自動將該持倉之止損位（SL）修改為您的進場價：$${formatPrice(record.entry)}。\n當前該筆交易已鎖定零風險保本！`
                     );
+                }
+            }
+
+            // 4. 當前最新價格 (currentPrice) 的即時 TP/SL 與移動止損判定，補足當前未完結 K 線的最新波動
+            if (record.status === 'PENDING') {
+                const cleanSymbol = record.symbol.replace('USDT', '');
+                
+                // (A) 移動止損即時判定
+                if (!record.isBreakEven) {
+                    if (record.type === 'LONG') {
+                        if (currentPrice >= record.entry + oneRSpace) {
+                            record.sl = record.entry;
+                            record.isBreakEven = true;
+                            hasUpdates = true;
+                            
+                            await sendCloudTelegramAlert(telegramToken, telegramChatId, 
+                                `🛡️【移動止損保本警報】\n\n您的 ${cleanSymbol} ${record.type} 交易已獲利達到 1R 空間！\n\n系統已自動將該持倉之止損位（SL）修改為您的進場價：$${formatPrice(record.entry)}。\n當前該筆交易已鎖定零風險保本！`
+                            );
+                        }
+                    } else if (record.type === 'SHORT') {
+                        if (currentPrice <= record.entry - oneRSpace) {
+                            record.sl = record.entry;
+                            record.isBreakEven = true;
+                            hasUpdates = true;
+                            
+                            await sendCloudTelegramAlert(telegramToken, telegramChatId, 
+                                `🛡️【移動止損保本警報】\n\n您的 ${cleanSymbol} ${record.type} 交易已獲利達到 1R 空間！\n\n系統已自動將該持倉之止損位（SL）修改為您的進場價：$${formatPrice(record.entry)}。\n當前該筆交易已鎖定零風險保本！`
+                            );
+                        }
+                    }
+                }
+
+                // (B) TP / SL 即時判定
+                if (record.type === 'LONG') {
+                    if (currentPrice <= record.sl) {
+                        record.status = 'SL';
+                        const profit = settleCloudPaperTrade(record, 'SL', paperBalance);
+                        paperBalance = parseFloat(paperBalance) + profit;
+                        hasUpdates = true;
+
+                        await sendCloudTelegramSettlementAlert(telegramToken, telegramChatId, record, 'SL', profit);
+                    } else if (currentPrice >= record.tp) {
+                        record.status = 'TP';
+                        const profit = settleCloudPaperTrade(record, 'TP', paperBalance);
+                        paperBalance = parseFloat(paperBalance) + profit;
+                        hasUpdates = true;
+
+                        await sendCloudTelegramSettlementAlert(telegramToken, telegramChatId, record, 'TP', profit);
+                    }
+                } else if (record.type === 'SHORT') {
+                    if (currentPrice >= record.sl) {
+                        record.status = 'SL';
+                        const profit = settleCloudPaperTrade(record, 'SL', paperBalance);
+                        paperBalance = parseFloat(paperBalance) + profit;
+                        hasUpdates = true;
+
+                        await sendCloudTelegramSettlementAlert(telegramToken, telegramChatId, record, 'SL', profit);
+                    } else if (currentPrice <= record.tp) {
+                        record.status = 'TP';
+                        const profit = settleCloudPaperTrade(record, 'TP', paperBalance);
+                        paperBalance = parseFloat(paperBalance) + profit;
+                        hasUpdates = true;
+
+                        await sendCloudTelegramSettlementAlert(telegramToken, telegramChatId, record, 'TP', profit);
+                    }
                 }
             }
 
