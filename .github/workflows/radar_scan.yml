@@ -1,9 +1,10 @@
 name: SNR Market Radar Auto Scanner
 
 on:
-  schedule:
-    # 調整為避開整點的冷門時段（例如每小時的 12, 32, 52 分），減少 GitHub 排程佇列的排隊延遲
-    - cron: '12,32,52 * * * *'
+  # 註解掉內建 schedule，改由外部服務（如 cron-job.org）精準 Webhook 觸發，避免重複執行與延遲
+  # schedule:
+  #   # 調整為避開整點的冷門時段（例如每小時的 12, 32, 52 分），減少 GitHub 排程佇列的排隊延遲
+  #   - cron: '12,32,52 * * * *'
   workflow_dispatch:
     # 支援在 GitHub 控制台手動點擊「Run workflow」立即執行
   repository_dispatch:
