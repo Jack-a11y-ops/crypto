@@ -3564,11 +3564,11 @@ class SNRTracer {
         const tgConfigKey = `snr_telegram_config_${email}`;
         const strategyConfigKey = `snr_strategy_config_${email}`;
         
-        let history = [];
+        let localHistory = [];
         try {
-            history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+            localHistory = JSON.parse(localStorage.getItem(historyKey) || '[]');
         } catch (e) {
-            history = [];
+            localHistory = [];
         }
 
         let telegramConfig = {};
@@ -3586,20 +3586,97 @@ class SNRTracer {
         }
 
         try {
-            // Realtime Database 鍵值不允許有點 (.)，將其替換為底線 (_)
             const safeEmail = email.replace(/\./g, '_');
-            await this.db.ref('users/' + safeEmail).update({
-                lastSymbol: this.symbol,
-                lastInterval: this.interval,
-                history: history,
-                telegramConfig: telegramConfig,
-                strategyConfig: strategyConfig,
-                paperBalance: this.paperBalance,
-                updatedAt: firebase.database.ServerValue.TIMESTAMP
-            });
+            const dbRef = this.db.ref('users/' + safeEmail);
+            
+            // 1. 先從 Firebase 雲端載入最新的歷史紀錄與餘額，避免直接覆蓋抹除雲端(GitHub Actions)產生的機會
+            const snapshot = await dbRef.once('value');
+            let cloudHistory = [];
+            let cloudPaperBalance = this.paperBalance;
+            if (snapshot.exists()) {
+                const cloudData = snapshot.val();
+                cloudHistory = cloudData.history || [];
+                if (cloudData.paperBalance !== undefined) {
+                    cloudPaperBalance = parseFloat(cloudData.paperBalance);
+                }
+            }
+
+            // 2. 合併本地與雲端歷史紀錄
+            const mergedHistory = this.mergeHistory(localHistory, cloudHistory);
+
+            // 3. 處理模擬餘額的同步 (若本地在此次分析中無狀態改變，則以雲端最新的餘額為準)
+            let finalPaperBalance = this.paperBalance;
+            if (snapshot.exists()) {
+                const cloudData = snapshot.val();
+                if (cloudData.paperBalance !== undefined) {
+                    const localHasUpdates = localHistory.some((lh) => {
+                        const ch = cloudHistory.find(c => c.id === lh.id);
+                        return !ch || ch.status !== lh.status;
+                    });
+                    if (!localHasUpdates) {
+                        finalPaperBalance = parseFloat(cloudData.paperBalance);
+                        this.paperBalance = finalPaperBalance;
+                        localStorage.setItem(`snr_paper_balance_${email}`, finalPaperBalance);
+                    }
+                }
+            }
+
+            // 4. 判斷是否需要執行 Firebase 寫入 (歷史紀錄與餘額有實質改變時才寫入，減少流量消耗)
+            const localHistStr = JSON.stringify(localHistory);
+            const mergedHistStr = JSON.stringify(mergedHistory);
+            const cloudHistStr = JSON.stringify(cloudHistory);
+            
+            const hasHistoryChange = localHistStr !== mergedHistStr || cloudHistStr !== mergedHistStr;
+            const hasBalanceChange = finalPaperBalance !== cloudPaperBalance;
+
+            // 只要本地與合併結果不同，就將最新歷史紀錄存入 localStorage 並渲染 UI
+            if (localHistStr !== mergedHistStr) {
+                localStorage.setItem(historyKey, mergedHistStr);
+                this.renderHistory(false);
+            }
+
+            // 如果雲端資料與最新合併結果有差異，才執行 Firebase 更新
+            if (hasHistoryChange || hasBalanceChange) {
+                await dbRef.update({
+                    lastSymbol: this.symbol,
+                    lastInterval: this.interval,
+                    history: mergedHistory,
+                    telegramConfig: telegramConfig,
+                    strategyConfig: strategyConfig,
+                    paperBalance: finalPaperBalance,
+                    updatedAt: firebase.database.ServerValue.TIMESTAMP
+                });
+                console.log('Firebase 雲端與本地歷史紀錄雙向同步成功！');
+            }
+
+            this.updatePaperAccountUI();
+
         } catch (e) {
             console.error("Firebase sync save error:", e);
         }
+    }
+
+    // 輔助函式：合併本地與雲端的歷史紀錄，並優先採用最新結算狀態
+    mergeHistory(localHist, cloudHist) {
+        const mergedMap = new Map();
+        localHist.forEach(item => {
+            if (item && item.id) mergedMap.set(item.id, item);
+        });
+        cloudHist.forEach(item => {
+            if (item && item.id) {
+                const localItem = mergedMap.get(item.id);
+                if (!localItem) {
+                    mergedMap.set(item.id, item);
+                } else {
+                    // 如果本地是 PENDING，而雲端有更新狀態 (例如在 Actions 中已被結算)，則以雲端為主
+                    if (localItem.status === 'PENDING' && item.status !== 'PENDING') {
+                        mergedMap.set(item.id, item);
+                    }
+                }
+            }
+        });
+        // 轉回陣列並依照 id (時間戳記) 從大到小排序，且限制最多 100 筆紀錄
+        return Array.from(mergedMap.values()).sort((a, b) => b.id - a.id).slice(0, 100);
     }
 
     initTelegramConfig() {
@@ -4091,12 +4168,13 @@ class SNRTracer {
             this.priceUpdateTimer = null;
         }
 
-        // 背景每 60 秒自動更新一次所有 PENDING 持倉的即時價格與結算狀態
+        // 背景每 60 秒自動更新一次所有 PENDING 持倉的即時價格與結算狀態，並與雲端進行雙向同步
         this.priceUpdateTimer = setInterval(async () => {
             if (!this.currentUser) return;
             try {
                 console.log('背景自動更新即時價格與持倉狀態中...');
                 await this.checkHistorySettlement();
+                await this.syncToCloud(); // 自動拉取與合併雲端新增的交易機會，防範網頁開啟時產生的覆蓋問題
                 
                 // 如果目前處於模擬收益曲線分頁，同步更新相關圖表 UI
                 const activeTab = document.querySelector('.tab-btn.active');
