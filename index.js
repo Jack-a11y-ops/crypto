@@ -1622,6 +1622,10 @@ class SNRTracer {
         }
 
         const now = Date.now();
+        let recordId = now;
+        while (history.some(r => r.id === recordId)) {
+            recordId++;
+        }
 
         // 尋找是否存在同幣種的 PENDING 舊交易 (不限時間週期)
         const oldPendingIndex = history.findIndex(r => 
@@ -1667,7 +1671,7 @@ class SNRTracer {
         const timeStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
 
         const newRecord = {
-            id: now,
+            id: recordId,
             timeStr: timeStr,
             symbol: symbol,
             interval: interval,

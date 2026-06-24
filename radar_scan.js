@@ -765,7 +765,7 @@ async function run() {
                     const paperPositionValue = paperMargin * paperLeverage;
 
                     history.unshift({
-                        id: now,
+                        id: now + i,
                         timeStr: timeStr,
                         symbol: opp.symbol,
                         interval: interval,
