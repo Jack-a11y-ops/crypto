@@ -1369,3 +1369,20 @@ body {
     flex-direction: column;
     gap: 20px;
 }
+
+/* 一鍵匯出報告提示與按鈕排版 */
+.export-tip-container {
+    text-align: right;
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+    width: 100%;
+}
+
+.export-tip-container code {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    color: var(--accent-color);
+}

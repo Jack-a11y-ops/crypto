@@ -533,6 +533,30 @@ class SNRTracer {
                 }
             });
         }
+
+        // 匯出歷史分析紀錄 CSV
+        const exportHistoryCsvBtn = document.getElementById('export-history-csv-btn');
+        if (exportHistoryCsvBtn) {
+            exportHistoryCsvBtn.addEventListener('click', () => this.exportHistoryCSV());
+        }
+
+        // 匯出歷史分析紀錄 PDF
+        const exportHistoryPdfBtn = document.getElementById('export-history-pdf-btn');
+        if (exportHistoryPdfBtn) {
+            exportHistoryPdfBtn.addEventListener('click', () => this.exportHistoryPDF());
+        }
+
+        // 匯出回測結果 CSV
+        const exportBacktestCsvBtn = document.getElementById('export-backtest-csv-btn');
+        if (exportBacktestCsvBtn) {
+            exportBacktestCsvBtn.addEventListener('click', () => this.exportBacktestCSV());
+        }
+
+        // 匯出回測結果 PDF
+        const exportBacktestPdfBtn = document.getElementById('export-backtest-pdf-btn');
+        if (exportBacktestPdfBtn) {
+            exportBacktestPdfBtn.addEventListener('click', () => this.exportBacktestPDF());
+        }
     }
 
     // 切換 Tab 輔助函式
@@ -3229,6 +3253,24 @@ class SNRTracer {
 
     // 渲染回測指標與交易明細表格
     renderBacktestResults(trades, klines) {
+        this.lastBacktestTrades = trades; // 保存交易紀錄以供匯出 CSV/PDF
+
+        // 控制回測匯出按鈕的顯示狀態
+        const csvBtn = document.getElementById('export-backtest-csv-btn');
+        const pdfBtn = document.getElementById('export-backtest-pdf-btn');
+        const tipText = document.getElementById('backtest-export-tip');
+        if (csvBtn && pdfBtn && tipText) {
+            if (trades.length > 0) {
+                csvBtn.style.display = 'inline-block';
+                pdfBtn.style.display = 'inline-block';
+                tipText.style.display = 'block';
+            } else {
+                csvBtn.style.display = 'none';
+                pdfBtn.style.display = 'none';
+                tipText.style.display = 'none';
+            }
+        }
+
         const total = trades.length;
         let winCount = 0;
         let lossCount = 0;
@@ -4237,6 +4279,477 @@ class SNRTracer {
         if (this.priceUpdateTimer) {
             clearInterval(this.priceUpdateTimer);
             this.priceUpdateTimer = null;
+        }
+    }
+
+    // ================= 一鍵匯出回測與交易明細報告 (Export Performance Reports) =================
+
+    // 匯出歷史分析紀錄為 CSV 檔案
+    exportHistoryCSV() {
+        if (!this.currentUser) return;
+        const email = this.currentUser.email;
+        const historyKey = `snr_history_${email}`;
+        let history = [];
+        try {
+            history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+        } catch (e) {
+            history = [];
+        }
+
+        // 讀取當前的篩選條件
+        const filterDirSelect = document.getElementById('history-filter-direction');
+        const filterIntervalSelect = document.getElementById('history-filter-interval');
+        const filterStatusSelect = document.getElementById('history-filter-status');
+        
+        const selectedDir = filterDirSelect ? filterDirSelect.value : 'ALL';
+        const selectedInterval = filterIntervalSelect ? filterIntervalSelect.value : 'ALL';
+        const selectedStatus = filterStatusSelect ? filterStatusSelect.value : 'ALL';
+
+        let filteredHistory = history.filter(r => {
+            const dirMatch = selectedDir === 'ALL' || r.type === selectedDir;
+            const intervalMatch = selectedInterval === 'ALL' || r.interval === selectedInterval;
+            const statusMatch = selectedStatus === 'ALL' || r.status === selectedStatus;
+            return dirMatch && intervalMatch && statusMatch;
+        });
+
+        if (filteredHistory.length === 0) {
+            alert('目前沒有符合篩選條件的歷史分析紀錄可供匯出。');
+            return;
+        }
+
+        // 欄位定義
+        const headers = ['時間 (Time)', '交易對 (Symbol)', '週期 (Interval)', '方向 (Type)', '進場價 (Entry)', '建議止盈 (TP)', '建議止損 (SL)', '盈虧比 (R:R)', '勝率 (WinRate)', '狀態 (Status)', '實現盈虧 (Profit USDT)'];
+        
+        let csvContent = '\uFEFF'; // UTF-8 BOM 避免 Excel 開啟中文亂碼
+        csvContent += headers.join(',') + '\n';
+
+        filteredHistory.forEach(r => {
+            const statusStr = r.status === 'PENDING' ? '進行中 (PENDING)' :
+                              r.status === 'TP' ? '已止盈 (TP)' :
+                              r.status === 'SL' ? '已止損 (SL)' :
+                              r.status === 'CLOSED' ? '已平倉 (CLOSED)' : r.status;
+            
+            const realizedProfit = r.realizedProfit !== undefined ? r.realizedProfit.toFixed(2) : '0.00';
+            const winRateStr = r.winRate !== undefined ? `${(r.winRate * 100).toFixed(0)}%` : '50%';
+
+            const row = [
+                r.timeStr,
+                r.symbol,
+                r.interval.toUpperCase(),
+                r.type,
+                r.entry,
+                r.tp,
+                r.sl,
+                r.rr ? r.rr.toFixed(2) : '1.50',
+                winRateStr,
+                statusStr,
+                realizedProfit
+            ];
+            csvContent += row.join(',') + '\n';
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        link.href = URL.createObjectURL(blob);
+        link.setAttribute('download', `SNR_History_Report_${dateStr}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    // 匯出歷史回測明細為 CSV 檔案
+    exportBacktestCSV() {
+        const trades = this.lastBacktestTrades || [];
+        if (trades.length === 0) {
+            alert('目前沒有歷史回測數據可供匯出。請先執行一次歷史回測。');
+            return;
+        }
+
+        const headers = ['代號 (Symbol)', '方向 (Direction)', '進場時間 (Open Time)', '出場時間 (Close Time)', '進場價 (Entry)', '出場價 (Close Price)', '預估勝率 (WinRate)', '盈虧比 (R:R)', '結果 (Status)', 'R值盈虧 (PnL)'];
+        let csvContent = '\uFEFF'; // UTF-8 BOM
+        csvContent += headers.join(',') + '\n';
+
+        trades.forEach(t => {
+            const formatTime = (ts) => {
+                const date = new Date(ts);
+                return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+            };
+
+            const dirStr = t.direction === 'LONG' ? '買入 (LONG)' : '賣出 (SHORT)';
+            const statusStr = t.status === 'TP' ? '已止盈 (TP)' :
+                              t.status === 'SL' ? '已止損 (SL)' :
+                              t.status === 'CLOSED' ? '已平倉 (CLOSED)' : t.status;
+            const winRateStr = t.winRate !== undefined ? `${(t.winRate * 100).toFixed(0)}%` : '50%';
+
+            const row = [
+                t.symbol,
+                dirStr,
+                formatTime(t.openTime),
+                formatTime(t.closeTime),
+                t.entry,
+                t.closePrice,
+                winRateStr,
+                t.rr ? t.rr.toFixed(2) : '1.50',
+                statusStr,
+                `${t.pnl.toFixed(2)} R`
+            ];
+            csvContent += row.join(',') + '\n';
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        link.href = URL.createObjectURL(blob);
+        link.setAttribute('download', `SNR_Backtest_Report_${dateStr}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    // 匯出歷史分析紀錄為 PDF 報告
+    async exportHistoryPDF() {
+        if (!this.currentUser) return;
+        const email = this.currentUser.email;
+        const historyKey = `snr_history_${email}`;
+        let history = [];
+        try {
+            history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+        } catch (e) {
+            history = [];
+        }
+
+        // 讀取當前的篩選狀態
+        const filterDirSelect = document.getElementById('history-filter-direction');
+        const filterIntervalSelect = document.getElementById('history-filter-interval');
+        const filterStatusSelect = document.getElementById('history-filter-status');
+        
+        const selectedDir = filterDirSelect ? filterDirSelect.value : 'ALL';
+        const selectedInterval = filterIntervalSelect ? filterIntervalSelect.value : 'ALL';
+        const selectedStatus = filterStatusSelect ? filterStatusSelect.value : 'ALL';
+
+        let filteredHistory = history.filter(r => {
+            const dirMatch = selectedDir === 'ALL' || r.type === selectedDir;
+            const intervalMatch = selectedInterval === 'ALL' || r.interval === selectedInterval;
+            const statusMatch = selectedStatus === 'ALL' || r.status === selectedStatus;
+            return dirMatch && intervalMatch && statusMatch;
+        });
+
+        if (filteredHistory.length === 0) {
+            alert('目前沒有符合篩選條件的交易紀錄，無法生成 PDF 績效報告。');
+            return;
+        }
+
+        // 收集統計資訊
+        const total = filteredHistory.length;
+        const settled = filteredHistory.filter(r => r.status === 'TP' || r.status === 'SL' || r.status === 'CLOSED');
+        
+        let winCount = 0;
+        let lossCount = 0;
+        let totalPnL = 0.0;
+        
+        settled.forEach(r => {
+            let pnl = 0.0;
+            if (r.status === 'TP') {
+                pnl = r.rr || 1.5;
+                winCount++;
+            } else if (r.status === 'SL') {
+                pnl = r.isBreakEven ? 0.0 : -1.0;
+                lossCount++;
+            } else if (r.status === 'CLOSED') {
+                if (r.realizedProfit !== undefined && r.paperBalanceAtOpen) {
+                    pnl = r.realizedProfit / (r.paperBalanceAtOpen * 0.02);
+                } else {
+                    pnl = -1.0;
+                }
+                if (pnl > 0) winCount++;
+                else if (pnl < 0) lossCount++;
+            }
+            totalPnL += pnl;
+        });
+        
+        const winRate = settled.length > 0 ? `${((winCount / settled.length) * 100).toFixed(1)}%` : '--';
+        
+        const stats = {
+            total: `${total} Positions`,
+            winRate: winRate,
+            pnl: `${totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(2)} R`,
+            ratio: `${winCount} W / ${lossCount} L`
+        };
+
+        const dateStr = new Date().toISOString().slice(0, 10);
+        await this.generatePDFReport(
+            'Paper Trading Account Performance Summary',
+            stats,
+            filteredHistory,
+            'history-equity-chart',
+            `SNR_PaperTrading_Report_${dateStr}.pdf`
+        );
+    }
+
+    // 匯出歷史回測結果為 PDF 報告
+    async exportBacktestPDF() {
+        const trades = this.lastBacktestTrades || [];
+        if (trades.length === 0) {
+            alert('目前沒有歷史回測數據。請先執行一次歷史回測。');
+            return;
+        }
+
+        // 收集統計資訊
+        const total = trades.length;
+        
+        let winCount = 0;
+        let lossCount = 0;
+        let totalPnL = 0.0;
+        
+        trades.forEach(t => {
+            totalPnL += t.pnl;
+            if (t.status === 'TP') {
+                winCount++;
+            } else if (t.status === 'SL') {
+                lossCount++;
+            } else if (t.status === 'CLOSED') {
+                if (t.pnl > 0) winCount++;
+                else if (t.pnl < 0) lossCount++;
+            }
+        });
+        
+        const winRate = total > 0 ? `${((winCount / total) * 100).toFixed(1)}%` : '--';
+        
+        const stats = {
+            total: `${total} Trades`,
+            winRate: winRate,
+            pnl: `${totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(2)} R`,
+            ratio: `${winCount} W / ${lossCount} L`
+        };
+
+        const dateStr = new Date().toISOString().slice(0, 10);
+        await this.generatePDFReport(
+            'Historical Backtesting Performance Summary',
+            stats,
+            trades,
+            'backtest-equity-chart',
+            `SNR_Backtest_Report_${dateStr}.pdf`
+        );
+    }
+
+    // 通用 PDF 績效報告繪製與下載核心邏輯 (html2canvas + jsPDF)
+    async generatePDFReport(title, stats, trades, chartElementId, fileName) {
+        this.showLoader(true);
+        try {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('p', 'mm', 'a4');
+            
+            // 擷取資金曲線圖
+            const chartContainer = document.getElementById(chartElementId);
+            if (!chartContainer) {
+                alert('找不到圖表元素，無法生成報告。');
+                this.showLoader(false);
+                return;
+            }
+            
+            // 使用 html2canvas 將圖表轉為圖片 (高解析度)
+            const canvas = await html2canvas(chartContainer, {
+                backgroundColor: '#12161a', // 配合原圖表深色科技背景，擷取下來最漂亮
+                scale: 2,
+                logging: false
+            });
+            const chartImgData = canvas.toDataURL('image/png');
+            
+            // PDF 頁面底色 (A4: 210 x 297 mm)
+            doc.setFillColor(248, 250, 252); // slate 50
+            doc.rect(0, 0, 210, 297, 'F');
+            
+            // 1. 頁首與深色背景列
+            doc.setFillColor(30, 41, 59); // slate 800
+            doc.rect(0, 0, 210, 25, 'F');
+            
+            doc.setTextColor(255, 255, 255);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(16);
+            doc.text('SNR TRACER PERFORMANCE REPORT', 15, 16);
+            
+            const dateStr = new Date().toLocaleString('zh-TW', { hour12: false });
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(148, 163, 184); // slate 400
+            doc.text(`Time: ${dateStr}`, 145, 16);
+            
+            // 下方彩色裝飾線
+            doc.setFillColor(0, 198, 255); // 科技藍
+            doc.rect(0, 25, 210, 2, 'F');
+            
+            // 2. 報告主標題與設定資訊
+            doc.setTextColor(15, 23, 42); // slate 900
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(14);
+            doc.text(title, 15, 40);
+            
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(71, 85, 105); // slate 600
+            doc.text(`Strategy Settings: ${this.strategyConfig.emaPeriod} EMA | ${this.strategyConfig.atrMultiplier}x ATR | Risk: ${this.strategyConfig.riskRatio}%`, 15, 46);
+            
+            // 3. 繪製 4 大數據 KPI 區塊 (2x2 排版)
+            const drawKpiCard = (x, y, w, h, label, value, isHighlight = false) => {
+                doc.setFillColor(255, 255, 255);
+                // 邊框
+                doc.setDrawColor(226, 232, 240); // slate 200
+                doc.roundedRect(x, y, w, h, 2, 2, 'FD');
+                
+                // 左側彩色小裝飾條
+                if (isHighlight) {
+                    doc.setFillColor(16, 185, 129);
+                } else {
+                    doc.setFillColor(56, 139, 253);
+                }
+                doc.rect(x, y + 2, 1.5, h - 4, 'F');
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(100, 116, 139); // slate 505
+                doc.text(label, x + 5, y + 6);
+                
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(14);
+                
+                if (isHighlight) {
+                    if (value.includes('-') || value.includes('Loss')) {
+                        doc.setTextColor(239, 68, 68); // 紅
+                    } else {
+                        doc.setTextColor(16, 185, 129); // 綠
+                    }
+                } else {
+                    doc.setTextColor(15, 23, 42);
+                }
+                doc.text(value, x + 5, y + 14);
+            };
+            
+            const cardW = 43;
+            const cardH = 20;
+            const startY = 53;
+            drawKpiCard(15, startY, cardW, cardH, 'Total Trades', stats.total || '0');
+            drawKpiCard(63, startY, cardW, cardH, 'Win Rate', stats.winRate || '--');
+            drawKpiCard(111, startY, cardW, cardH, 'Total PnL', stats.pnl || '0.00 R', true);
+            drawKpiCard(159, startY, cardW, cardH, 'Profit / Loss', stats.ratio || '0 / 0');
+            
+            // 4. 插入資金曲線圖 (Equity Curve)
+            doc.setFillColor(255, 255, 255);
+            doc.roundedRect(15, 80, 180, 95, 2, 2, 'FD');
+            
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.setTextColor(30, 41, 59);
+            doc.text('Equity Curve Analysis', 20, 88);
+            
+            // 嵌入資金曲線 Canvas 擷取圖
+            doc.addImage(chartImgData, 'PNG', 18, 92, 174, 80);
+            
+            // 5. 繪製精選亮點交易紀錄 (Top 5 Trades)
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.setTextColor(30, 41, 59);
+            doc.text('Featured Performance Trades (Top 5 PnL)', 15, 188);
+            
+            // 繪製表格 Header
+            const tableY = 194;
+            doc.setFillColor(30, 41, 59);
+            doc.rect(15, tableY, 180, 8, 'F');
+            
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.setTextColor(255, 255, 255);
+            doc.text('Symbol', 20, tableY + 5.5);
+            doc.text('Type', 45, tableY + 5.5);
+            doc.text('Entry Price', 70, tableY + 5.5);
+            doc.text('Close Price', 105, tableY + 5.5);
+            doc.text('Win Rate', 140, tableY + 5.5);
+            doc.text('Return (PnL)', 170, tableY + 5.5);
+            
+            // 篩選出回報最好的前 5 筆交易
+            const featuredTrades = [...trades]
+                .filter(t => t.status !== 'PENDING')
+                .sort((a, b) => {
+                    const pnlA = a.pnl !== undefined ? a.pnl : (a.realizedProfit || 0);
+                    const pnlB = b.pnl !== undefined ? b.pnl : (b.realizedProfit || 0);
+                    return pnlB - pnlA; // 降序
+                })
+                .slice(0, 5);
+                
+            let rowY = tableY + 8;
+            featuredTrades.forEach((t, index) => {
+                if (index % 2 === 1) {
+                    doc.setFillColor(241, 245, 249); // slate 100
+                } else {
+                    doc.setFillColor(255, 255, 255);
+                }
+                doc.rect(15, rowY, 180, 8, 'F');
+                
+                doc.setDrawColor(241, 245, 249);
+                doc.line(15, rowY + 8, 195, rowY + 8);
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.5);
+                doc.setTextColor(51, 65, 85);
+                
+                const sym = t.symbol ? t.symbol.replace('USDT', '') : '';
+                const typeStr = t.type || t.direction || 'LONG';
+                const entryVal = t.entry || 0;
+                const closeVal = t.closePrice || t.tp || 0;
+                const winRateVal = t.winRate !== undefined ? `${(t.winRate * 100).toFixed(0)}%` : '--';
+                
+                let pnlVal = 0;
+                let pnlTextStr = '';
+                if (t.pnl !== undefined) {
+                    pnlVal = t.pnl;
+                    pnlTextStr = `${pnlVal >= 0 ? '+' : ''}${pnlVal.toFixed(2)} R`;
+                } else if (t.realizedProfit !== undefined) {
+                    pnlVal = t.realizedProfit;
+                    pnlTextStr = `${pnlVal >= 0 ? '+' : ''}$${pnlVal.toFixed(2)}`;
+                }
+                
+                doc.text(sym, 20, rowY + 5.5);
+                doc.text(typeStr, 45, rowY + 5.5);
+                doc.text(`$${this.formatPrice(entryVal)}`, 70, rowY + 5.5);
+                doc.text(`$${this.formatPrice(closeVal)}`, 105, rowY + 5.5);
+                doc.text(winRateVal, 140, rowY + 5.5);
+                
+                if (pnlVal > 0) {
+                    doc.setTextColor(16, 185, 129); // 綠
+                } else if (pnlVal < 0) {
+                    doc.setTextColor(239, 68, 68); // 紅
+                } else {
+                    doc.setTextColor(100, 116, 139);
+                }
+                doc.text(pnlTextStr, 170, rowY + 5.5);
+                
+                rowY += 8;
+            });
+            
+            if (featuredTrades.length === 0) {
+                doc.setFillColor(255, 255, 255);
+                doc.rect(15, rowY, 180, 15, 'F');
+                doc.setTextColor(148, 163, 184);
+                doc.text('No settled trade records available for comparison.', 65, rowY + 9);
+            }
+            
+            // 6. 頁尾與浮水印
+            doc.setFillColor(148, 163, 184);
+            doc.line(15, 280, 195, 280);
+            
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(148, 163, 184);
+            doc.text('SNR TRACER - Agentic Quantitative Support System', 15, 285);
+            doc.text('Page 1 of 1', 180, 285);
+            
+            doc.save(fileName);
+            
+        } catch (err) {
+            console.error("PDF generation failed:", err);
+            alert("PDF 績效報告生成失敗，請檢查瀏覽器主控台。");
+        } finally {
+            this.showLoader(false);
         }
     }
 }

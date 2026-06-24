@@ -312,6 +312,11 @@
                         </select>
                         <button id="refresh-prices-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px;">更新價格</button>
                         <button id="clear-history-btn" class="danger-btn-sm">清除所有歷史紀錄</button>
+                        <button id="export-history-csv-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px; background: #00c6ff; border: none; font-weight: 600; color: #000;">匯出交易明細 (CSV)</button>
+                        <button id="export-history-pdf-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px; background: linear-gradient(90deg, #11998e, #38ef7d); border: none; font-weight: 600; color: #000;">PDF 績效報告</button>
+                    </div>
+                    <div class="export-tip-container" style="text-align: right; margin-top: 10px; font-size: 11px; color: var(--text-muted); width: 100%;">
+                        * 提示：因瀏覽器安全限制，匯出的報告將下載至您的下載資料夾，您可以手動移至 <code>C:\Users\a2857\OneDrive\Desktop\APP\antigravity</code> 保存。
                     </div>
                 </div>
                 
@@ -466,6 +471,11 @@
                         </div>
                         <button id="run-backtest-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px;">開始歷史回測</button>
                         <button id="run-optimization-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px; background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%);">最佳化策略參數</button>
+                        <button id="export-backtest-csv-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px; background: #00c6ff; border: none; font-weight: 600; color: #000; display: none;">匯出回測明細 (CSV)</button>
+                        <button id="export-backtest-pdf-btn" class="primary-btn-sm" style="width: auto; padding: 8px 18px; background: linear-gradient(90deg, #11998e, #38ef7d); border: none; font-weight: 600; color: #000; display: none;">PDF 績效報告</button>
+                    </div>
+                    <div id="backtest-export-tip" class="export-tip-container" style="text-align: right; margin-top: 10px; font-size: 11px; color: var(--text-muted); width: 100%; display: none;">
+                        * 提示：因瀏覽器安全限制，匯出的報告將下載至您的下載資料夾，您可以手動移至 <code>C:\Users\a2857\OneDrive\Desktop\APP\antigravity</code> 保存。
                     </div>
                 </div>
 
@@ -622,6 +632,10 @@
             </div>
         </div>
     </div>
+
+    <!-- html2canvas & jsPDF for PDF Report Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <!-- Firebase SDK (v8 Compatibility Mode) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
