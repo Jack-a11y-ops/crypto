@@ -678,7 +678,7 @@ async function run() {
         }
 
         const top50 = tickers
-            .filter(t => t.symbol.endsWith('USDT'))
+            .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD'))
             .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
             .slice(0, 50);
 

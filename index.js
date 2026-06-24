@@ -235,6 +235,10 @@ class SNRTracer {
         document.getElementById('search-btn').addEventListener('click', async () => {
             const input = document.getElementById('pair-input').value.toUpperCase().replace('/', '');
             if (input) {
+                if (input.includes('RLUSD')) {
+                    alert('RLUSD 為穩定幣，系統已設定跳過分析！');
+                    return;
+                }
                 this.symbol = input;
                 this.switchTab('single-coin-tab'); // 自動切換回單幣分析
                 await this.fetchAndAnalyze();
@@ -246,6 +250,10 @@ class SNRTracer {
             if (e.key === 'Enter') {
                 const input = document.getElementById('pair-input').value.toUpperCase().replace('/', '');
                 if (input) {
+                    if (input.includes('RLUSD')) {
+                        alert('RLUSD 為穩定幣，系統已設定跳過分析！');
+                        return;
+                    }
                     this.symbol = input;
                     this.switchTab('single-coin-tab'); // 自動切換回單幣分析
                     await this.fetchAndAnalyze();
@@ -887,6 +895,12 @@ class SNRTracer {
     }
 
     async fetchAndAnalyze(isInitial = false) {
+        if (this.symbol && this.symbol.toUpperCase().includes('RLUSD')) {
+            alert('RLUSD 為穩定幣，系統已設定跳過分析！');
+            this.showLoader(false);
+            return;
+        }
+
         // 如果是體驗訪客，先檢查是否已達 3 次分析上限，若未達上限則立刻扣除次數 (即時回饋)
         if (this.currentUser && this.currentUser.isGuest) {
             let count = parseInt(localStorage.getItem('guest_analysis_count') || '0');
@@ -1450,7 +1464,7 @@ class SNRTracer {
             const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT'))
+                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD'))
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50);
 
@@ -3028,7 +3042,7 @@ class SNRTracer {
             const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT'))
+                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD'))
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50)
                 .map(t => t.symbol);
@@ -3116,7 +3130,7 @@ class SNRTracer {
             const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT'))
+                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD'))
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50)
                 .map(t => t.symbol);
