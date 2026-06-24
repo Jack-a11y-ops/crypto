@@ -738,9 +738,11 @@ async function run() {
                         
                         if (!oldRecord.settledBalance) {
                             const oldPaperBalanceAtOpen = oldRecord.paperBalanceAtOpen !== undefined ? oldRecord.paperBalanceAtOpen : paperBalance;
-                            const pnlR = oldRecord.type === 'LONG'
-                                ? (opp.lastPrice - oldRecord.entry) / Math.abs(oldRecord.entry - oldRecord.sl)
-                                : (oldRecord.entry - opp.lastPrice) / Math.abs(oldRecord.entry - oldRecord.sl);
+                            const oldInitialSl = oldRecord.initialSl !== undefined ? oldRecord.initialSl : oldRecord.sl;
+                            const oldRisk = Math.abs(oldRecord.entry - oldInitialSl);
+                            const pnlR = oldRisk > 0 ? (oldRecord.type === 'LONG'
+                                ? (opp.lastPrice - oldRecord.entry) / oldRisk
+                                : (oldRecord.entry - opp.lastPrice) / oldRisk) : 0.0;
                             const profit = oldPaperBalanceAtOpen * 0.02 * pnlR;
                             paperBalance = parseFloat(paperBalance) + profit;
                             oldRecord.settledBalance = true;

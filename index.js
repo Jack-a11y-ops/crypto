@@ -1735,9 +1735,11 @@ class SNRTracer {
             const oldPending = history[oldPendingIndex];
             if (!oldPending.settledBalance) {
                 const oldPaperBalanceAtOpen = oldPending.paperBalanceAtOpen || this.paperBalance;
-                const pnlR = oldPending.type === 'LONG'
-                    ? (entry - oldPending.entry) / Math.abs(oldPending.entry - oldPending.sl)
-                    : (oldPending.entry - entry) / Math.abs(oldPending.entry - oldPending.sl);
+                const oldInitialSl = oldPending.initialSl !== undefined ? oldPending.initialSl : oldPending.sl;
+                const oldRisk = Math.abs(oldPending.entry - oldInitialSl);
+                const pnlR = oldRisk > 0 ? (oldPending.type === 'LONG'
+                    ? (entry - oldPending.entry) / oldRisk
+                    : (oldPending.entry - entry) / oldRisk) : 0.0;
                 const profit = oldPaperBalanceAtOpen * 0.02 * pnlR;
                 
                 this.paperBalance = parseFloat(this.paperBalance) + profit;
@@ -1855,9 +1857,11 @@ class SNRTracer {
                     // 計算模擬交易的未實現盈虧
                     let paperPnLHTML = '';
                     if (r.paperBalanceAtOpen !== undefined && r.slPercent !== undefined) {
-                        const pnlR = r.type === 'LONG'
-                            ? (r.currentPrice - r.entry) / Math.abs(r.entry - r.sl)
-                            : (r.entry - r.currentPrice) / Math.abs(r.entry - r.sl);
+                        const initialSl = r.initialSl !== undefined ? r.initialSl : r.sl;
+                        const risk = Math.abs(r.entry - initialSl);
+                        const pnlR = risk > 0 ? (r.type === 'LONG'
+                            ? (r.currentPrice - r.entry) / risk
+                            : (r.entry - r.currentPrice) / risk) : 0.0;
                         const unrealProfit = r.paperBalanceAtOpen * 0.02 * pnlR;
                         const unrealStr = unrealProfit >= 0 ? `+$${unrealProfit.toFixed(2)}` : `-$${Math.abs(unrealProfit).toFixed(2)}`;
                         const unrealClass = unrealProfit >= 0 ? 'text-green' : 'text-red';
@@ -3862,9 +3866,11 @@ class SNRTracer {
                     activeMargin += margin;
 
                     if (r.currentPrice !== undefined) {
-                        const pnlR = r.type === 'LONG'
-                            ? (r.currentPrice - r.entry) / Math.abs(r.entry - r.sl)
-                            : (r.entry - r.currentPrice) / Math.abs(r.entry - r.sl);
+                        const initialSl = r.initialSl !== undefined ? r.initialSl : r.sl;
+                        const risk = Math.abs(r.entry - initialSl);
+                        const pnlR = risk > 0 ? (r.type === 'LONG'
+                            ? (r.currentPrice - r.entry) / risk
+                            : (r.entry - r.currentPrice) / risk) : 0.0;
                         unrealizedPnL += paperBalanceAtOpen * 0.02 * pnlR;
                     }
                 }
