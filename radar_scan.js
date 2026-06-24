@@ -825,7 +825,6 @@ async function run() {
                             const pnlR = oldRisk > 0 ? (oldRecord.type === 'LONG'
                                 ? (opp.lastPrice - oldRecord.entry) / oldRisk
                                 : (oldRecord.entry - opp.lastPrice) / oldRisk) : 0.0;
-                            
                             oldRecord.pnlR = pnlR;
                             const profit = settleCloudPaperTrade(oldRecord, 'CLOSED', paperBalance);
                             paperBalance = parseFloat(paperBalance) + profit;

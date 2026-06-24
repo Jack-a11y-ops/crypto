@@ -825,7 +825,12 @@ class SNRTracer {
                 // Realtime Database 鍵值不允許有點 (.)，將其替換為底線 (_)
                 const safeEmail = user.email.replace(/\./g, '_');
                 const dbRef = this.db.ref('users/' + safeEmail);
-                const snapshot = await dbRef.once('value');
+                
+                // 加上 2.5 秒超時機制，防止斷網或連線卡住時網頁 Loader 永久無法關閉
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Firebase sync timeout')), 2500)
+                );
+                const snapshot = await Promise.race([dbRef.once('value'), timeoutPromise]);
                 if (snapshot.exists()) {
                     const cloudData = snapshot.val();
                     
@@ -1826,13 +1831,108 @@ class SNRTracer {
                             ? (r.closePrice - r.entry) / risk 
                             : (r.entry - r.closePrice) / risk;
                     }
+                    if (pnlChange > 0) {
+                        winCount++;
+                    } else {
+                        lossCount++;
+                    }
+                } else {
+                    lossCount++;
+                }
+            }
+        });
+        
+        const winRate = settled.length > 0 ? `${((winCount / settled.length) * 100).toFixed(1)}%` : '--';
+
+        document.getElementById('history-stat-total').innerText = `${total} 筆`;
+        document.getElementById('history-stat-settled').innerText = `${settled.length} 筆`;
+        document.getElementById('history-stat-winrate').innerText = winRate;
+        document.getElementById('history-stat-ratio').innerText = `${winCount} / ${lossCount}`;
+
+        const historyList = document.getElementById('history-list');
+        if (!historyList) return;
+
+        if (filteredHistory.length === 0) {
+            historyList.innerHTML = `
+                <tr>
+                    <td colspan="7" style="text-align:center; padding: 40px; color: var(--text-muted);">
+                        ${(selectedDir === 'ALL' && selectedInterval === 'ALL') ? '暫無歷史分析紀錄。請在單幣詳細分析中搜尋並產生有效交易信號。' : '暫無符合篩選條件的歷史分析紀錄。'}
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        historyList.innerHTML = filteredHistory.map(r => {
+            let statusHTML = '';
+            if (r.status === 'PENDING') {
+                if (r.currentPrice !== undefined && r.percentChange !== undefined) {
+                    const percentStr = r.percentChange >= 0 ? `+${r.percentChange.toFixed(2)}%` : `${r.percentChange.toFixed(2)}%`;
+                    const percentClass = r.percentChange >= 0 ? 'text-green' : 'text-red';
+                    
+                    // 計算模擬交易的未實現盈虧
+                    let paperPnLHTML = '';
+                    if (r.paperBalanceAtOpen !== undefined && r.slPercent !== undefined) {
+                        const initialSl = r.initialSl !== undefined ? r.initialSl : r.sl;
+                        const risk = Math.abs(r.entry - initialSl);
+                        const pnlR = risk > 0 ? (r.type === 'LONG'
+                            ? (r.currentPrice - r.entry) / risk
+                            : (r.entry - r.currentPrice) / risk) : 0.0;
+                        const unrealProfit = r.paperBalanceAtOpen * 0.02 * pnlR;
+                        const unrealStr = unrealProfit >= 0 ? `+$${unrealProfit.toFixed(2)}` : `-$${Math.abs(unrealProfit).toFixed(2)}`;
+                        const unrealClass = unrealProfit >= 0 ? 'text-green' : 'text-red';
+                        paperPnLHTML = `未實現: <span class="${unrealClass}" style="font-weight: 700;">${unrealStr}</span><br>`;
+                    }
+
+                    statusHTML = `
+                        <span class="status-pill pending">進行中 ⏳</span>
+                        <div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">
+                            現價: $${this.formatPrice(r.currentPrice)}<br>
+                            漲跌: <span class="${percentClass}" style="font-weight: 700;">${percentStr}</span><br>
+                            ${paperPnLHTML}
+                        </div>
+                    `;
+                } else {
+                    statusHTML = `<span class="status-pill pending">進行中 ⏳</span>`;
+                }
+            } else if (r.status === 'TP') {
+                const profit = r.realizedProfit !== undefined ? r.realizedProfit : ((r.paperBalanceAtOpen || 10000) * 0.02 * (r.rr || 1.5));
+                let frictionHTML = '';
+                if (r.frictionCost !== undefined && r.frictionCost !== null && typeof r.frictionCost === 'number') {
+                    frictionHTML = `<br>摩擦: <span style="color: var(--text-muted); font-size: 10px;">${r.frictionCost.toFixed(2)} USDT</span>`;
+                }
+                const profitHTML = `<div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">收益: <span class="text-green" style="font-weight: 700;">+${profit.toFixed(2)}</span>${frictionHTML}</div>`;
+                statusHTML = `
+                    <span class="status-pill tp">已止盈 🎯</span>
+                    ${profitHTML}
+                `;
+            } else if (r.status === 'SL') {
+                const profit = r.realizedProfit !== undefined ? r.realizedProfit : -((r.paperBalanceAtOpen || 10000) * 0.02);
+                let frictionHTML = '';
+                if (r.frictionCost !== undefined && r.frictionCost !== null && typeof r.frictionCost === 'number') {
+                    frictionHTML = `<br>摩擦: <span style="color: var(--text-muted); font-size: 10px;">${r.frictionCost.toFixed(2)} USDT</span>`;
+                }
+                const profitHTML = `<div style="font-size: 11px; margin-top: 6px; color: var(--text-muted); line-height: 1.4;">收益: <span class="text-red" style="font-weight: 700;">-${Math.abs(profit).toFixed(2)}</span>${frictionHTML}</div>`;
+                statusHTML = `
+                    <span class="status-pill sl">已止損 ❌</span>
+                    ${profitHTML}
+                `;
+            } else if (r.status === 'CLOSED') {
+                if (r.closePrice !== undefined && r.closePrice !== null) {
+                    const risk = Math.abs(r.entry - r.sl);
+                    let pnlChange = 0.0;
+                    if (risk > 0) {
+                        pnlChange = r.type === 'LONG' 
+                            ? (r.closePrice - r.entry) / risk 
+                            : (r.entry - r.closePrice) / risk;
+                    }
                     const pnlStr = pnlChange >= 0 ? `+${pnlChange.toFixed(2)} R` : `${pnlChange.toFixed(2)} R`;
                     const pnlClass = pnlChange >= 0 ? 'text-green' : 'text-red';
                     
                     const profit = r.realizedProfit !== undefined ? r.realizedProfit : ((r.paperBalanceAtOpen || 10000) * 0.02 * pnlChange);
                     const profitStr = profit >= 0 ? `+${profit.toFixed(2)}` : `-${Math.abs(profit).toFixed(2)}`;
                     let frictionHTML = '';
-                    if (r.frictionCost !== undefined) {
+                    if (r.frictionCost !== undefined && r.frictionCost !== null && typeof r.frictionCost === 'number') {
                         frictionHTML = `<br>摩擦: <span style="color: var(--text-muted); font-size: 10px;">${r.frictionCost.toFixed(2)} USDT</span>`;
                     }
                     const profitHTML = `金額: <span class="${pnlClass}" style="font-weight: 700;">${profitStr}</span>${frictionHTML}<br>`;
@@ -1848,7 +1948,7 @@ class SNRTracer {
                 } else {
                     const profit = r.realizedProfit !== undefined ? r.realizedProfit : -((r.paperBalanceAtOpen || 10000) * 0.02);
                     let frictionHTML = '';
-                    if (r.frictionCost !== undefined) {
+                    if (r.frictionCost !== undefined && r.frictionCost !== null && typeof r.frictionCost === 'number') {
                         frictionHTML = `<br>摩擦: <span style="color: var(--text-muted); font-size: 10px;">${r.frictionCost.toFixed(2)} USDT</span>`;
                     }
                     statusHTML = `
@@ -1900,7 +2000,7 @@ class SNRTracer {
                         ${leverageHTML}
                     </td>
                     <td style="font-family: 'Courier New', monospace; font-weight: 700; font-size: 15px;">
-                        ${r.rr.toFixed(2)}
+                        ${(r.rr !== undefined && r.rr !== null) ? (typeof r.rr === 'number' ? r.rr.toFixed(2) : parseFloat(r.rr).toFixed(2)) : '--'}
                         ${r.winRate !== undefined ? `<div style="font-size: 10px; color: var(--text-muted); font-weight: normal; margin-top: 3px;">勝率: ${(r.winRate * 100).toFixed(0)}%</div>` : ''}
                     </td>
                     <td>${statusHTML}</td>
