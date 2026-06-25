@@ -13,6 +13,7 @@ if (typeof fetch === 'undefined') {
 function calculateEMA(data, period = 50) {
     const k = 2 / (period + 1);
     const emaArr = [];
+    if (data.length === 0) return emaArr;
     let ema = data[0].close;
     emaArr.push(ema);
     for (let i = 1; i < data.length; i++) {
@@ -22,9 +23,10 @@ function calculateEMA(data, period = 50) {
     return emaArr;
 }
 
-// 2. 平均真實波幅 (ATR) 計算 (獲取最後一根 ATR 波動值)
-function calculateLastATR(data, period = 14) {
-    if (data.length < period) return 0;
+// 2. 平均真實波幅 (ATR) 系列計算 (返回每根 K 線的 ATR 陣列)
+function calculateATRSeries(data, period = 14) {
+    const atrArr = new Array(data.length).fill(0);
+    if (data.length < period) return atrArr;
     
     const trArr = [];
     trArr.push(data[0].high - data[0].low);
@@ -42,11 +44,13 @@ function calculateLastATR(data, period = 14) {
         atr += trArr[i];
     }
     atr = atr / period;
+    atrArr[period - 1] = atr;
 
     for (let i = period; i < data.length; i++) {
         atr = (atr * (period - 1) + trArr[i]) / period;
+        atrArr[i] = atr;
     }
-    return atr;
+    return atrArr;
 }
 
 // 3. Wilder's Smoothing RSI 計算
@@ -133,35 +137,23 @@ function calculateMACD(data) {
     return { macd: macdLine, signal: signalLine, hist };
 }
 
-// 5. 支撐壓力與共振信號分析
-function analyzeSNR(data, config = null) {
-    const activeConfig = config || { emaPeriod: 50, atrMultiplier: 1.5 };
-    const emaPeriod = activeConfig.emaPeriod || 50;
-    const atrMultiplier = activeConfig.atrMultiplier || 1.5;
+// 5. 支撐壓力與共振信號分析 (預計算極速版)
+function analyzeSNRFast(klines, idx, precalculated, config) {
+    const emaPeriod = config.emaPeriod || 50;
+    const atrMultiplier = config.atrMultiplier || 1.5;
 
-    const lastPrice = data[data.length - 1].close;
-    const emaVal = calculateEMA(data, emaPeriod);
-    const lastEMA = emaVal[emaVal.length - 1];
-    const prevEMA = emaVal[emaVal.length - 2];
-    const lastATR = calculateLastATR(data, 14);
+    const lastPrice = klines[idx].close;
+    
+    // 直接獲取預計算指標
+    const lastEMA = precalculated.ema[emaPeriod][idx];
+    const prevEMA = precalculated.ema[emaPeriod][idx - 1];
+    const lastATR = precalculated.atr[idx];
+    const lastRSI = precalculated.rsi[idx];
+    const lastHist = precalculated.macdHist[idx];
+    const prevHist = precalculated.macdHist[idx - 1];
 
-    const rsiVal = calculateRSI(data, 14);
-    const lastRSI = rsiVal[rsiVal.length - 1];
-    const macdVal = calculateMACD(data);
-    const lastHist = macdVal.hist[macdVal.hist.length - 1];
-    const prevHist = macdVal.hist[macdVal.hist.length - 2];
-
-    const pivots = [];
-    for (let i = 2; i < data.length - 2; i++) {
-        if (data[i].high > data[i - 1].high && data[i].high > data[i - 2].high &&
-            data[i].high > data[i + 1].high && data[i].high > data[i + 2].high) {
-            pivots.push({ type: 'high', value: data[i].high });
-        }
-        if (data[i].low < data[i - 1].low && data[i].low < data[i - 2].low &&
-            data[i].low < data[i + 1].low && data[i].low < data[i + 2].low) {
-            pivots.push({ type: 'low', value: data[i].low });
-        }
-    }
+    // 篩選出 index <= idx - 2 的 pivots
+    const pivots = precalculated.pivots.filter(p => p.index <= idx - 2);
 
     const threshold = lastATR > 0 ? lastATR * 0.8 : lastPrice * 0.006;
     let levels = [];
@@ -294,8 +286,8 @@ function analyzeSNR(data, config = null) {
     return { levels, support, resistance, signal, rr, sl, tp, lastATR, winRate, rsi: lastRSI, macdHist: lastHist };
 }
 
-// 6. 無副作用策略回測計算，複用前端回測引擎
-function evaluateStrategy(klines, symbol, config = null) {
+// 6. 無副作用策略回測計算 (極速版)
+function evaluateStrategyFast(klines, symbol, precalculated, config = null) {
     const activeConfig = config || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
     const feeRate = activeConfig.feeRate !== undefined ? activeConfig.feeRate : 0.05;
     const slippage = activeConfig.slippage !== undefined ? activeConfig.slippage : 0.02;
@@ -310,15 +302,7 @@ function evaluateStrategy(klines, symbol, config = null) {
 
     for (let i = 100; i < klines.length; i++) {
         const currentK = klines[i];
-        const historicalWindow = klines.slice(0, i + 1).map(d => ({
-            time: d.openTime / 1000,
-            open: d.open,
-            high: d.high,
-            low: d.low,
-            close: d.close
-        }));
-
-        const analysis = analyzeSNR(historicalWindow, activeConfig);
+        const analysis = analyzeSNRFast(klines, i, precalculated, activeConfig);
 
         if (activeTrade) {
             // 勝率平倉替換 (CLOSED)
@@ -461,14 +445,14 @@ function evaluateStrategy(klines, symbol, config = null) {
     return trades;
 }
 
-// 7. 前向分頁拉取 K 線 (3000根以上)
+// 7. 前向分頁拉取 K 線 (3000根以上) - 使用 data-api.binance.vision 避開 IP 封鎖
 async function getBinanceKlines(symbol, interval, requiredLimit = 3000) {
     let allKlines = [];
     let endTime = null;
     
     while (allKlines.length < requiredLimit) {
         const fetchLimit = Math.min(1000, requiredLimit - allKlines.length);
-        let url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${fetchLimit}`;
+        let url = `https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${fetchLimit}`;
         if (endTime) {
             url += `&endTime=${endTime}`;
         }
@@ -609,7 +593,49 @@ async function run() {
         await new Promise(resolve => setTimeout(resolve, 30));
     }
 
-    console.log('K 線下載完畢。開始進行 16 組參數的網格搜尋交叉回測最佳化...');
+    console.log('K 線下載完畢。開始進行指標預計算以優化網格搜尋效能...');
+    const precalculatedData = {};
+    for (const sym in allKlines) {
+        const klines = allKlines[sym];
+        
+        // 預計算各週期 EMA
+        const emaData = {};
+        for (const period of [20, 50, 100, 200]) {
+            emaData[period] = calculateEMA(klines, period);
+        }
+        
+        // 預計算 ATR
+        const atrData = calculateATRSeries(klines, 14);
+        
+        // 預計算 RSI
+        const rsiData = calculateRSI(klines, 14);
+        
+        // 預計算 MACD
+        const macdData = calculateMACD(klines);
+        
+        // 預計算 Pivots
+        const pivots = [];
+        for (let i = 2; i < klines.length - 2; i++) {
+            if (klines[i].high > klines[i - 1].high && klines[i].high > klines[i - 2].high &&
+                klines[i].high > klines[i + 1].high && klines[i].high > klines[i + 2].high) {
+                pivots.push({ type: 'high', value: klines[i].high, index: i });
+            }
+            if (klines[i].low < klines[i - 1].low && klines[i].low < klines[i - 2].low &&
+                klines[i].low < klines[i + 1].low && klines[i].low < klines[i + 2].low) {
+                pivots.push({ type: 'low', value: klines[i].low, index: i });
+            }
+        }
+        
+        precalculatedData[sym] = {
+            ema: emaData,
+            atr: atrData,
+            rsi: rsiData,
+            macdHist: macdData.hist,
+            pivots: pivots
+        };
+    }
+
+    console.log('指標預計算完畢。開始極速網格搜尋交叉回測最佳化...');
 
     const emaPeriods = [20, 50, 100, 200];
     const atrMultipliers = [1.0, 1.5, 2.0, 3.0];
@@ -637,7 +663,8 @@ async function run() {
 
             for (const sym in allKlines) {
                 const klines = allKlines[sym];
-                const trades = evaluateStrategy(klines, sym, testConfig);
+                const precalc = precalculatedData[sym];
+                const trades = evaluateStrategyFast(klines, sym, precalc, testConfig);
 
                 trades.forEach(t => {
                     totalPnLCombined += t.pnl;
@@ -689,6 +716,9 @@ async function run() {
     msg += `*提示*：您可以至平台網頁端，點選歷史回測的二維熱力圖，或於自定義策略面板中手動套用上述最優參數，Actions 雲端自動雷達監控將會無縫同步！\n`;
     msg += `平台連結：https://spontaneous-kheer-c470e5.netlify.app/`;
 
+    console.log('\n--- Telegram 報告內容 ---');
+    console.log(msg);
+    console.log('------------------------\n');
     await sendTelegramMessage(telegramToken, telegramChatId, msg);
     console.log('報告發送成功。每日最佳化任務執行完成！');
 }
