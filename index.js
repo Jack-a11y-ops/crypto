@@ -3413,6 +3413,8 @@ class SNRTracer {
 
             if (optCard) {
                 optCard.style.display = 'block';
+                // 渲染參數最佳化二維熱力圖
+                this.renderOptimizationHeatmap(results);
                 optCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
 
