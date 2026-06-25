@@ -573,6 +573,9 @@ function settleCloudPaperTrade(record, finalStatus, currentPaperBalance) {
     if (record.settledBalance) return 0;
     const paperBalanceAtOpen = record.paperBalanceAtOpen !== undefined ? record.paperBalanceAtOpen : currentPaperBalance;
     
+    // 增加安全防禦：防止帳戶餘額為負數或零時，導致收益與摩擦成本計算變為負數
+    const baseBalance = paperBalanceAtOpen > 0 ? paperBalanceAtOpen : 10000.0;
+    
     let pnlR = -1.0;
     if (finalStatus === 'TP') {
         pnlR = record.rr || 1.5;
@@ -588,10 +591,10 @@ function settleCloudPaperTrade(record, finalStatus, currentPaperBalance) {
     const frictionR = slPercent > 0 ? (2 * (feeRate + slippage) / slPercent) : 0;
     const actualPnLR = pnlR - frictionR;
 
-    const profit = paperBalanceAtOpen * 0.02 * actualPnLR;
+    const profit = baseBalance * 0.02 * actualPnLR;
     record.settledBalance = true;
     record.realizedProfit = profit;
-    record.frictionCost = paperBalanceAtOpen * 0.02 * frictionR;
+    record.frictionCost = baseBalance * 0.02 * frictionR;
     record.frictionR = frictionR;
     return profit;
 }
