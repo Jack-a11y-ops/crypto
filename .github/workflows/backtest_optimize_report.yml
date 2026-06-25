@@ -1,0 +1,26 @@
+name: SNR Backtest Daily Optimize Report
+
+on:
+  schedule:
+    # 台灣時間早上 7 點（即 UTC 23:00）
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+    # 支援在 GitHub 控制台手動點擊「Run workflow」立即執行
+
+jobs:
+  optimize-report:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Run SNR Daily Backtest Optimization
+      run: node backtest_optimize_report.js
+      env:
+        USER_EMAIL: ${{ secrets.USER_EMAIL }}
