@@ -522,6 +522,15 @@
                         <span>策略參數最佳化結果 (Grid Search Optimizer)</span>
                         <span style="font-size: 12px; color: var(--text-muted); font-weight: normal;">*以累計收益 (R值) 降序排序，推薦最優的前 3 名</span>
                     </h3>
+                    
+                    <!-- 參數最佳化二維熱力圖 -->
+                    <div id="backtest-optimization-heatmap-container" style="margin-bottom: 25px; background: rgba(255,255,255,0.015); border: 1px solid var(--glass-border); border-radius: 8px; padding: 20px;">
+                        <h4 style="margin: 0 0 15px 0; font-size: 13px; color: var(--text-muted); font-weight: normal; letter-spacing: 0.5px;">
+                            參數最佳化效能矩陣 (X軸: EMA 週期 / Y軸: ATR 止損倍數)
+                        </h4>
+                        <div id="backtest-optimization-heatmap" class="heatmap-wrapper"></div>
+                    </div>
+
                     <div style="overflow-x: auto;">
                         <table class="premium-radar-table">
                             <thead>

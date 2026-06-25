@@ -235,8 +235,8 @@ class SNRTracer {
         document.getElementById('search-btn').addEventListener('click', async () => {
             const input = document.getElementById('pair-input').value.toUpperCase().replace('/', '');
             if (input) {
-                if (input.includes('RLUSD')) {
-                    alert('RLUSD 為穩定幣，系統已設定跳過分析！');
+                if (input.includes('RLUSD') || input.includes('FDUSD')) {
+                    alert('穩定幣（RLUSD / FDUSD）系統已設定跳過分析！');
                     return;
                 }
                 this.symbol = input;
@@ -250,8 +250,8 @@ class SNRTracer {
             if (e.key === 'Enter') {
                 const input = document.getElementById('pair-input').value.toUpperCase().replace('/', '');
                 if (input) {
-                    if (input.includes('RLUSD')) {
-                        alert('RLUSD 為穩定幣，系統已設定跳過分析！');
+                    if (input.includes('RLUSD') || input.includes('FDUSD')) {
+                        alert('穩定幣（RLUSD / FDUSD）系統已設定跳過分析！');
                         return;
                     }
                     this.symbol = input;
@@ -900,8 +900,8 @@ class SNRTracer {
     }
 
     async fetchAndAnalyze(isInitial = false) {
-        if (this.symbol && this.symbol.toUpperCase().includes('RLUSD')) {
-            alert('RLUSD 為穩定幣，系統已設定跳過分析！');
+        if (this.symbol && (this.symbol.toUpperCase().includes('RLUSD') || this.symbol.toUpperCase().includes('FDUSD'))) {
+            alert('穩定幣（RLUSD / FDUSD）系統已設定跳過分析！');
             this.showLoader(false);
             return;
         }
@@ -1469,7 +1469,7 @@ class SNRTracer {
             const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD'))
+                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD'))
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50);
 
@@ -3005,6 +3005,8 @@ class SNRTracer {
             // 顯示結果面板
             if (optCard) {
                 optCard.style.display = 'block';
+                // 渲染參數最佳化二維熱力圖
+                this.renderOptimizationHeatmap(results);
                 // 捲動至結果面板位置
                 optCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
@@ -3016,6 +3018,119 @@ class SNRTracer {
             optBtn.disabled = false;
             optBtn.innerText = '最佳化策略參數';
         }
+    }
+
+    // 渲染參數最佳化二維熱力圖
+    renderOptimizationHeatmap(results) {
+        const heatmapEl = document.getElementById('backtest-optimization-heatmap');
+        if (!heatmapEl) return;
+
+        const emaPeriods = [20, 50, 100, 200];
+        const atrMultipliers = [1.0, 1.5, 2.0, 3.0];
+
+        // 將 results 轉為 O(1) 查找 Map
+        const resultMap = {};
+        results.forEach(res => {
+            resultMap[`${res.ema}_${res.atr.toFixed(1)}`] = res;
+        });
+
+        // 找出累計收益的絕對值最大值，作為漸層比率基底
+        let maxAbsPnL = 0;
+        results.forEach(res => {
+            const absVal = Math.abs(res.totalPnL);
+            if (absVal > maxAbsPnL) maxAbsPnL = absVal;
+        });
+
+        // 1. 生成 Y 軸標籤 (ATR) - 由大至小排列
+        let yLabelsHTML = '<div class="heatmap-y-axis">';
+        const sortedAtrs = [...atrMultipliers].reverse();
+        sortedAtrs.forEach(atr => {
+            yLabelsHTML += `<div style="height: 100%; display: flex; align-items: center; justify-content: flex-end;">${atr.toFixed(1)}x</div>`;
+        });
+        yLabelsHTML += '</div>';
+
+        // 2. 生成 4x4 Grid 格子
+        let gridHTML = '<div class="heatmap-grid-container">';
+        gridHTML += '<div class="heatmap-grid">';
+        for (const atr of sortedAtrs) {
+            for (const ema of emaPeriods) {
+                const key = `${ema}_${atr.toFixed(1)}`;
+                const res = resultMap[key] || { totalTrades: 0, winRate: 0, totalPnL: 0 };
+                
+                // 動態計算漸層背景強度 (Alpha 介於 0.1 到 0.8)
+                let cellBg = 'rgba(255, 255, 255, 0.03)';
+                if (res.totalPnL > 0) {
+                    const alpha = maxAbsPnL > 0 ? 0.1 + 0.7 * (res.totalPnL / maxAbsPnL) : 0.4;
+                    cellBg = `rgba(14, 203, 129, ${alpha})`;
+                } else if (res.totalPnL < 0) {
+                    const alpha = maxAbsPnL > 0 ? 0.1 + 0.7 * (Math.abs(res.totalPnL) / maxAbsPnL) : 0.4;
+                    cellBg = `rgba(246, 70, 93, ${alpha})`;
+                }
+                
+                const pnlText = `${res.totalPnL >= 0 ? '+' : ''}${res.totalPnL.toFixed(1)} R`;
+                
+                gridHTML += `
+                    <div class="heatmap-cell" style="background: ${cellBg};" onclick="app.applyOptimalConfig(${ema}, ${atr})"
+                         data-ema="${ema}" data-atr="${atr}" data-trades="${res.totalTrades}" data-winrate="${res.winRate.toFixed(1)}" data-pnl="${res.totalPnL.toFixed(2)}">
+                        <span class="cell-pnl">${pnlText}</span>
+                        <span class="cell-winrate">${res.winRate.toFixed(0)}% 勝率</span>
+                    </div>`;
+            }
+        }
+        gridHTML += '</div>';
+        
+        // 插入自定義 Tooltip 提示窗
+        gridHTML += '<div class="heatmap-tooltip" id="heatmap-tooltip-el"></div>';
+        gridHTML += '</div>';
+
+        // 3. 生成 X 軸標籤 (EMA)
+        let xLabelsHTML = '<div class="heatmap-x-axis">';
+        emaPeriods.forEach(ema => {
+            xLabelsHTML += `<div style="flex: 1; text-align: center;">${ema} EMA</div>`;
+        });
+        xLabelsHTML += '</div>';
+
+        // 寫入 DOM
+        heatmapEl.innerHTML = yLabelsHTML + gridHTML + xLabelsHTML;
+
+        // 4. 綁定 Tooltip 監聽事件
+        const tooltipEl = document.getElementById('heatmap-tooltip-el');
+        const cells = heatmapEl.querySelectorAll('.heatmap-cell');
+        
+        cells.forEach(cell => {
+            cell.addEventListener('mouseenter', () => {
+                const ema = cell.dataset.ema;
+                const atr = parseFloat(cell.dataset.atr).toFixed(1);
+                const trades = cell.dataset.trades;
+                const winrate = cell.dataset.winrate;
+                const pnl = parseFloat(cell.dataset.pnl);
+                
+                const pnlText = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} R`;
+                const pnlColor = pnl > 0 ? 'var(--green)' : (pnl < 0 ? 'var(--red)' : 'var(--text-muted)');
+                
+                tooltipEl.innerHTML = `
+                    <div class="tooltip-title">${ema} EMA / ${atr}x ATR</div>
+                    <div><b>總交易數：</b>${trades} 筆</div>
+                    <div><b>預估勝率：</b>${winrate}%</div>
+                    <div><b>累計收益：</b><span style="color: ${pnlColor}; font-weight: bold;">${pnlText}</span></div>
+                    <div style="margin-top: 6px; font-size: 10px; color: var(--accent-color); text-align: center; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 6px;">🎯 點選快速套用參數</div>
+                `;
+                tooltipEl.style.display = 'block';
+            });
+            
+            cell.addEventListener('mousemove', (e) => {
+                const containerRect = heatmapEl.getBoundingClientRect();
+                // 將 tooltip 座標限制在容器相對定位範圍內
+                const x = e.clientX - containerRect.left + 15;
+                const y = e.clientY - containerRect.top - 100; // 稍往上移避免遮擋游標
+                tooltipEl.style.left = `${x}px`;
+                tooltipEl.style.top = `${y}px`;
+            });
+            
+            cell.addEventListener('mouseleave', () => {
+                tooltipEl.style.display = 'none';
+            });
+        });
     }
 
     // 套用最優參數並即時重繪常規回測
@@ -3086,7 +3201,7 @@ class SNRTracer {
             const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD'))
+                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD'))
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50)
                 .map(t => t.symbol);
@@ -3174,7 +3289,7 @@ class SNRTracer {
             const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD'))
+                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD'))
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50)
                 .map(t => t.symbol);
