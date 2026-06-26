@@ -3,7 +3,7 @@ name: SNR Backtest Daily Optimize Report
 on:
   schedule:
     # 台灣時間早上 7 點（即 UTC 23:00）
-    - cron: '0 23 * * *'
+    - cron: '17 23 * * *'
   workflow_dispatch:
     # 支援在 GitHub 控制台手動點擊「Run workflow」立即執行
 
