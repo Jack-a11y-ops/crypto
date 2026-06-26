@@ -510,9 +510,10 @@ class SNRTracer {
         // 綁定 K 線圖拖曳止盈線相關事件
         const modalChartContainer = document.getElementById('modal-tv-chart');
         if (modalChartContainer) {
-            modalChartContainer.addEventListener('mousedown', (e) => this.handleChartMouseDown(e));
-            modalChartContainer.addEventListener('mousemove', (e) => this.handleChartMouseMove(e));
-            window.addEventListener('mouseup', (e) => this.handleChartMouseUp(e));
+            modalChartContainer.style.touchAction = 'none'; // 防止手機上拖曳時網頁被滾動
+            modalChartContainer.addEventListener('pointerdown', (e) => this.handleChartMouseDown(e));
+            modalChartContainer.addEventListener('pointermove', (e) => this.handleChartMouseMove(e));
+            window.addEventListener('pointerup', (e) => this.handleChartMouseUp(e));
         }
 
         // 歷史回測按鈕監聽
