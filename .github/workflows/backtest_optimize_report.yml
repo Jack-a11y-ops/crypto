@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     # 支援在 GitHub 控制台手動點擊「Run workflow」立即執行
   repository_dispatch:
-    # 支援外部精準 Cron 服務（如 cron-job.org）透過 Webhook 即時觸發
-    types: [auto_scan]
+    # 支援外部精準 Cron 服務（如 cron-job.org）在每天早上 7 點整發送 Webhook 觸發
+    types: [daily_optimize]
 
 jobs:
   optimize-report:
