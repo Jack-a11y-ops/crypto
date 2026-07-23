@@ -373,7 +373,7 @@ async function checkCloudHistorySettlement(history, paperBalance, telegramToken,
             else if (record.interval === '1d') intervalMs = 24 * 60 * 60 * 1000;
 
             const queryStartTime = record.id - intervalMs;
-            const url = `https://api.binance.com/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=500`;
+            const url = `https://data-api.binance.vision/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=500`;
             const response = await fetch(url);
             const klines = await response.json();
 
@@ -487,7 +487,7 @@ async function checkCloudHistorySettlement(history, paperBalance, telegramToken,
                     hasUpdates = true;
 
                     await sendCloudTelegramAlert(telegramToken, telegramChatId, 
-                        `🛡️【移動止損保本警報】\n\n您的 ${cleanSymbol} ${record.type} 交易已獲利達到 1R 空間！\n\n系統已自動將該持倉之止損位（SL）修改為您的進場價：$${formatPrice(record.entry)}。\n當前該筆交易已鎖定零風險保本！`
+                        `🛡️【盈虧比達 1:1 移動止損提醒】\n\n標的：${cleanSymbol} | 方向：${record.type}\n進場價：$${formatPrice(record.entry)}\n當前現價：$${formatPrice(record.currentPrice || record.entry)}\n\n🎉 該筆交易獲利已達到 1:1 盈虧比 (1R 空間)！\n系統已自動將止損價（SL）修改為進場保本點 $${formatPrice(record.entry)}，已成功鎖定零風險！`
                     );
                 }
             }
@@ -505,7 +505,7 @@ async function checkCloudHistorySettlement(history, paperBalance, telegramToken,
                             hasUpdates = true;
                             
                             await sendCloudTelegramAlert(telegramToken, telegramChatId, 
-                                `🛡️【移動止損保本警報】\n\n您的 ${cleanSymbol} ${record.type} 交易已獲利達到 1R 空間！\n\n系統已自動將該持倉之止損位（SL）修改為您的進場價：$${formatPrice(record.entry)}。\n當前該筆交易已鎖定零風險保本！`
+                                `🛡️【盈虧比達 1:1 移動止損提醒】\n\n標的：${cleanSymbol} | 方向：${record.type}\n進場價：$${formatPrice(record.entry)}\n當前現價：$${formatPrice(currentPrice)}\n\n🎉 該筆交易獲利已達到 1:1 盈虧比 (1R 空間)！\n系統已自動將止損價（SL）修改為進場保本點 $${formatPrice(record.entry)}，已成功鎖定零風險！`
                             );
                         }
                     } else if (record.type === 'SHORT') {
@@ -515,7 +515,7 @@ async function checkCloudHistorySettlement(history, paperBalance, telegramToken,
                             hasUpdates = true;
                             
                             await sendCloudTelegramAlert(telegramToken, telegramChatId, 
-                                `🛡️【移動止損保本警報】\n\n您的 ${cleanSymbol} ${record.type} 交易已獲利達到 1R 空間！\n\n系統已自動將該持倉之止損位（SL）修改為您的進場價：$${formatPrice(record.entry)}。\n當前該筆交易已鎖定零風險保本！`
+                                `🛡️【盈虧比達 1:1 移動止損提醒】\n\n標的：${cleanSymbol} | 方向：${record.type}\n進場價：$${formatPrice(record.entry)}\n當前現價：$${formatPrice(currentPrice)}\n\n🎉 該筆交易獲利已達到 1:1 盈虧比 (1R 空間)！\n系統已自動將止損價（SL）修改為進場保本點 $${formatPrice(record.entry)}，已成功鎖定零風險！`
                             );
                         }
                     }
