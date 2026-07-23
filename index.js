@@ -235,7 +235,7 @@ class SNRTracer {
         document.getElementById('search-btn').addEventListener('click', async () => {
             const input = document.getElementById('pair-input').value.toUpperCase().replace('/', '');
             if (input) {
-                if (input.includes('RLUSD') || input.includes('FDUSD') || input.includes('UUSDT')) {
+                if (input.includes('RLUSD') || input.includes('FDUSD') || input.includes('UUSDT') || input.includes('TRXUSDT')) {
                     alert('穩定幣（RLUSD / FDUSD）系統已設定跳過分析！');
                     return;
                 }
@@ -250,7 +250,7 @@ class SNRTracer {
             if (e.key === 'Enter') {
                 const input = document.getElementById('pair-input').value.toUpperCase().replace('/', '');
                 if (input) {
-                    if (input.includes('RLUSD') || input.includes('FDUSD') || input.includes('UUSDT')) {
+                    if (input.includes('RLUSD') || input.includes('FDUSD') || input.includes('UUSDT') || input.includes('TRXUSDT')) {
                         alert('穩定幣（RLUSD / FDUSD）系統已設定跳過分析！');
                         return;
                     }
@@ -901,7 +901,7 @@ class SNRTracer {
     }
 
     async fetchAndAnalyze(isInitial = false) {
-        if (this.symbol && (this.symbol.toUpperCase().includes('RLUSD') || this.symbol.toUpperCase().includes('FDUSD') || this.symbol.toUpperCase().includes('UUSDT'))) {
+        if (this.symbol && (this.symbol.toUpperCase().includes('RLUSD') || this.symbol.toUpperCase().includes('FDUSD') || this.symbol.toUpperCase().includes('UUSDT') || this.symbol.toUpperCase().includes('TRXUSDT'))) {
             alert('穩定幣（RLUSD / FDUSD）系統已設定跳過分析！');
             this.showLoader(false);
             return;
@@ -1470,7 +1470,7 @@ class SNRTracer {
             const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT')
+                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT')
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50);
 
@@ -3202,7 +3202,7 @@ class SNRTracer {
             const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT')
+                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT')
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50)
                 .map(t => t.symbol);
@@ -3290,7 +3290,7 @@ class SNRTracer {
             const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT')
+                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT')
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50)
                 .map(t => t.symbol);
