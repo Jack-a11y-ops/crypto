@@ -486,9 +486,12 @@ async function checkCloudHistorySettlement(history, paperBalance, telegramToken,
                     record.isBreakEven = tempIsBreakEven;
                     hasUpdates = true;
 
-                    await sendCloudTelegramAlert(telegramToken, telegramChatId, 
-                        `🛡️【盈虧比達 1:1 移動止損提醒】\n\n標的：${cleanSymbol} | 方向：${record.type}\n進場價：$${formatPrice(record.entry)}\n當前現價：$${formatPrice(record.currentPrice || record.entry)}\n\n🎉 該筆交易獲利已達到 1:1 盈虧比 (1R 空間)！\n系統已自動將止損價（SL）修改為進場保本點 $${formatPrice(record.entry)}，已成功鎖定零風險！`
-                    );
+                    if (!record.notified1to1) {
+                        record.notified1to1 = true;
+                        await sendCloudTelegramAlert(telegramToken, telegramChatId, 
+                            `🛡️【盈虧比達 1:1 移動止損提醒】\n\n標的：${cleanSymbol} | 方向：${record.type}\n進場價：$${formatPrice(record.entry)}\n當前現價：$${formatPrice(record.currentPrice || record.entry)}\n\n🎉 該筆交易獲利已達到 1:1 盈虧比 (1R 空間)！\n系統已自動將止損價（SL）修改為進場保本點 $${formatPrice(record.entry)}，已成功鎖定零風險！`
+                        );
+                    }
                 }
             }
 
@@ -504,9 +507,12 @@ async function checkCloudHistorySettlement(history, paperBalance, telegramToken,
                             record.isBreakEven = true;
                             hasUpdates = true;
                             
-                            await sendCloudTelegramAlert(telegramToken, telegramChatId, 
-                                `🛡️【盈虧比達 1:1 移動止損提醒】\n\n標的：${cleanSymbol} | 方向：${record.type}\n進場價：$${formatPrice(record.entry)}\n當前現價：$${formatPrice(currentPrice)}\n\n🎉 該筆交易獲利已達到 1:1 盈虧比 (1R 空間)！\n系統已自動將止損價（SL）修改為進場保本點 $${formatPrice(record.entry)}，已成功鎖定零風險！`
-                            );
+                            if (!record.notified1to1) {
+                                record.notified1to1 = true;
+                                await sendCloudTelegramAlert(telegramToken, telegramChatId, 
+                                    `🛡️【盈虧比達 1:1 移動止損提醒】\n\n標的：${cleanSymbol} | 方向：${record.type}\n進場價：$${formatPrice(record.entry)}\n當前現價：$${formatPrice(currentPrice)}\n\n🎉 該筆交易獲利已達到 1:1 盈虧比 (1R 空間)！\n系統已自動將止損價（SL）修改為進場保本點 $${formatPrice(record.entry)}，已成功鎖定零風險！`
+                                );
+                            }
                         }
                     } else if (record.type === 'SHORT') {
                         if (currentPrice <= record.entry - oneRSpace) {
@@ -514,9 +520,12 @@ async function checkCloudHistorySettlement(history, paperBalance, telegramToken,
                             record.isBreakEven = true;
                             hasUpdates = true;
                             
-                            await sendCloudTelegramAlert(telegramToken, telegramChatId, 
-                                `🛡️【盈虧比達 1:1 移動止損提醒】\n\n標的：${cleanSymbol} | 方向：${record.type}\n進場價：$${formatPrice(record.entry)}\n當前現價：$${formatPrice(currentPrice)}\n\n🎉 該筆交易獲利已達到 1:1 盈虧比 (1R 空間)！\n系統已自動將止損價（SL）修改為進場保本點 $${formatPrice(record.entry)}，已成功鎖定零風險！`
-                            );
+                            if (!record.notified1to1) {
+                                record.notified1to1 = true;
+                                await sendCloudTelegramAlert(telegramToken, telegramChatId, 
+                                    `🛡️【盈虧比達 1:1 移動止損提醒】\n\n標的：${cleanSymbol} | 方向：${record.type}\n進場價：$${formatPrice(record.entry)}\n當前現價：$${formatPrice(currentPrice)}\n\n🎉 該筆交易獲利已達到 1:1 盈虧比 (1R 空間)！\n系統已自動將止損價（SL）修改為進場保本點 $${formatPrice(record.entry)}，已成功鎖定零風險！`
+                                );
+                            }
                         }
                     }
                 }
