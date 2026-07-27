@@ -3611,7 +3611,7 @@ class SNRTracer {
                 else if (record.interval === '1d') intervalMs = 24 * 60 * 60 * 1000;
 
                 const queryStartTime = record.id - intervalMs;
-                const url = `https://api.binance.com/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=500`;
+                const url = `https://data-api.binance.vision/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=500`;
                 const response = await fetch(url);
                 const klines = await response.json();
 
@@ -3742,7 +3742,10 @@ class SNRTracer {
                             `🛡️ 移動止損已啟用`,
                             `${cleanSymbol} ${record.type} 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
                         );
-                        this.sendTelegramBreakEvenNotification(record);
+                        if (!record.notified1to1) {
+                                    record.notified1to1 = true;
+                                    this.sendTelegramBreakEvenNotification(record);
+                                }
                     }
                 }
 
@@ -3762,7 +3765,10 @@ class SNRTracer {
                                     `🛡️ 移動止損已啟用`,
                                     `${cleanSymbol} LONG 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
                                 );
-                                this.sendTelegramBreakEvenNotification(record);
+                                if (!record.notified1to1) {
+                                    record.notified1to1 = true;
+                                    this.sendTelegramBreakEvenNotification(record);
+                                }
                             }
                         } else if (record.type === 'SHORT') {
                             if (currentPrice <= record.entry - oneRSpace) {
@@ -3774,7 +3780,10 @@ class SNRTracer {
                                     `🛡️ 移動止損已啟用`,
                                     `${cleanSymbol} SHORT 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
                                 );
-                                this.sendTelegramBreakEvenNotification(record);
+                                if (!record.notified1to1) {
+                                    record.notified1to1 = true;
+                                    this.sendTelegramBreakEvenNotification(record);
+                                }
                             }
                         }
                     }
@@ -4034,6 +4043,10 @@ class SNRTracer {
                     // 如果本地是 PENDING，而雲端有更新狀態 (例如在 Actions 中已被結算)，則以雲端為主
                     if (localItem.status === 'PENDING' && item.status !== 'PENDING') {
                         mergedMap.set(item.id, item);
+                    } else if (localItem.status === 'PENDING' && item.status === 'PENDING') {
+                        if (item.notified1to1) localItem.notified1to1 = true;
+                        if (item.isBreakEven) localItem.isBreakEven = true;
+                        if (item.sl !== undefined) localItem.sl = item.sl;
                     }
                 }
             }
