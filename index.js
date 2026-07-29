@@ -4318,17 +4318,16 @@ class SNRTracer {
 
 
     toggleBlacklistConfig() {
-        console.log('[BlacklistConfig] toggleBlacklistConfig 被呼叫！');
         const content = document.getElementById('blacklist-config-content');
         const arrow = document.getElementById('blacklist-config-arrow');
-        console.log('[BlacklistConfig] content element:', content, '| arrow element:', arrow);
         if (content && arrow) {
             content.classList.toggle('hidden');
-            console.log('[BlacklistConfig] hidden 狀態:', content.classList.contains('hidden'));
             if (content.classList.contains('hidden')) {
                 arrow.style.transform = 'rotate(0deg)';
             } else {
                 arrow.style.transform = 'rotate(180deg)';
+                // 展開後自動滾動到內容區域，讓使用者看到展開結果
+                setTimeout(() => content.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
             }
         }
     }
