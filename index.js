@@ -45,7 +45,16 @@ class SNRTracer {
         this.initEquityChart(); // 初始化模擬收益曲線圖表
         this.initBacktestChart(); // 初始化歷史回測圖表
         this.bindEvents();
-        this.initAuth(); // 啟動身份驗證流程
+        this.initAuth();
+        
+        // 全域 Loader 安全防卡死機制 (2秒後強制解除非單幣頁面的加載遮罩)
+        setTimeout(() => {
+            const activeTab = document.querySelector('.tab-btn.active');
+            const activeTabId = activeTab ? activeTab.dataset.tab : 'history-tab';
+            if (activeTabId !== 'single-coin-tab') {
+                this.showLoader(false);
+            }
+        }, 2000); // 啟動身份驗證流程
         this.requestNotificationPermission(); // 請求通知權限
         this.initTelegramConfig(); // 初始化 Telegram 設定
     }
