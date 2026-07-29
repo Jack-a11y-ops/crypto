@@ -1525,7 +1525,10 @@ class SNRTracer {
             const tickerUrl = 'https://data-api.binance.vision/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT')
+                .filter(t => {
+                    const blacklist = this.customBlacklist || [];
+                    return t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT' && !blacklist.includes(t.symbol);
+                })
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50);
 
@@ -2888,6 +2891,12 @@ class SNRTracer {
             return;
         }
 
+        const blacklist = this.customBlacklist || [];
+        if (symbol.includes('RLUSD') || symbol.includes('FDUSD') || symbol === 'UUSDT' || symbol === 'TRXUSDT' || blacklist.includes(symbol)) {
+            alert(`⚠️ 幣種「${symbol}」屬於排除黑名單標的，已取消回測！`);
+            return;
+        }
+
         runBtn.disabled = true;
         runBtn.innerText = '正在計算中...';
         const startTime = Date.now();
@@ -2962,6 +2971,12 @@ class SNRTracer {
 
         if (!symbol) {
             alert('請輸入有效的交易對，例如 BTCUSDT');
+            return;
+        }
+
+        const blacklist = this.customBlacklist || [];
+        if (symbol.includes('RLUSD') || symbol.includes('FDUSD') || symbol === 'UUSDT' || symbol === 'TRXUSDT' || blacklist.includes(symbol)) {
+            alert(`⚠️ 幣種「${symbol}」屬於排除黑名單標的，已取消回測！`);
             return;
         }
 
@@ -3264,7 +3279,10 @@ class SNRTracer {
             const tickerUrl = 'https://data-api.binance.vision/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT')
+                .filter(t => {
+                    const blacklist = this.customBlacklist || [];
+                    return t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT' && !blacklist.includes(t.symbol);
+                })
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50)
                 .map(t => t.symbol);
@@ -3352,7 +3370,10 @@ class SNRTracer {
             const tickerUrl = 'https://data-api.binance.vision/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
-                .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT')
+                .filter(t => {
+                    const blacklist = this.customBlacklist || [];
+                    return t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT' && !blacklist.includes(t.symbol);
+                })
                 .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
                 .slice(0, 50)
                 .map(t => t.symbol);
