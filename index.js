@@ -492,9 +492,16 @@ class SNRTracer {
 
         // 儲存策略參數設定按鈕監聽
         
-        const blacklistHeader = document.querySelector('.blacklist-config-header');
-        if (blacklistHeader) {
-            blacklistHeader.addEventListener('click', () => this.toggleBlacklistConfig());
+
+
+        // 卡片標題點擊展開/收合 - 使用 getElementById 確保最可靠的事件綁定
+        const strategyHeaderBtn = document.getElementById('strategy-config-header-btn');
+        if (strategyHeaderBtn) {
+            strategyHeaderBtn.addEventListener('click', () => this.toggleStrategyConfig());
+        }
+        const blacklistHeaderBtn = document.getElementById('blacklist-config-header-btn');
+        if (blacklistHeaderBtn) {
+            blacklistHeaderBtn.addEventListener('click', () => this.toggleBlacklistConfig());
         }
 
         const saveStrategyConfigBtn = document.getElementById('save-strategy-config-btn');
