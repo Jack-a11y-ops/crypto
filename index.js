@@ -33,7 +33,8 @@ class SNRTracer {
         this.backtestChart = null; // 回測資金曲線圖表
         this.backtestLineSeries = null; // 回測資金折線圖
         this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
-        this.customBlacklist = []; // 使用者自訂排除掃描幣種黑名單
+        this.customBlacklist = [];
+        this.pendingBlacklist = []; // 使用者自訂排除掃描幣種黑名單
         this.paperBalance = 10000.0;
         this.priceUpdateTimer = null; // 背景自動更新價格定時器
 
@@ -4346,6 +4347,7 @@ class SNRTracer {
     }
 
     initBlacklistConfig() {
+        this.pendingBlacklist = [];
         if (!this.currentUser) return;
         const email = this.currentUser.email;
         const configKey = `snr_blacklist_config_${email}`;
@@ -4364,7 +4366,7 @@ class SNRTracer {
         const customContainer = document.getElementById('custom-blacklist-tags');
         const defaultContainer = document.getElementById('default-blacklist-tags');
         
-        // 1. 渲染上方的系統預設與雲端已去除幣種欄位
+        // 1. 渲染上方的「系統預設與雲端已去除幣種」欄位
         if (defaultContainer) {
             let defaultHtml = `
                 <span style="background: rgba(255, 71, 87, 0.15); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff6b81; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">RLUSD (穩定幣)</span>
@@ -4374,24 +4376,27 @@ class SNRTracer {
             `;
             if (this.customBlacklist && this.customBlacklist.length > 0) {
                 this.customBlacklist.forEach(symbol => {
-                    defaultHtml += `<span style="background: rgba(155, 89, 182, 0.2); border: 1px solid rgba(155, 89, 182, 0.4); color: #d6a2e8; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">☁️ ${symbol} (雲端已去除)</span>`;
+                    defaultHtml += `<span style="background: rgba(155, 89, 182, 0.25); border: 1px solid rgba(155, 89, 182, 0.5); color: #d6a2e8; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                        ☁️ ${symbol} (雲端已去除)
+                        <span onclick="app.removeCloudBlacklistSymbol('${symbol}')" style="cursor: pointer; font-size: 14px; line-height: 1; color: rgba(255,255,255,0.7); font-weight: bold;" title="從雲端黑名單中移除">&times;</span>
+                    </span>`;
                 });
             }
             defaultContainer.innerHTML = defaultHtml;
         }
 
-        // 2. 渲染下方的自訂排除列表 (帶有刪除按鈕)
+        // 2. 渲染下方的「自訂排除幣種列表 (待上傳)」
         if (customContainer) {
-            if (!this.customBlacklist || this.customBlacklist.length === 0) {
-                customContainer.innerHTML = `<span style="font-size: 12px; color: var(--text-muted);">尚未新增自訂排除幣種。</span>`;
+            if (!this.pendingBlacklist || this.pendingBlacklist.length === 0) {
+                customContainer.innerHTML = `<span style="font-size: 12px; color: var(--text-muted);">尚未新增待儲存的排除幣種。</span>`;
                 return;
             }
 
             let customHtml = '';
-            this.customBlacklist.forEach(symbol => {
+            this.pendingBlacklist.forEach(symbol => {
                 customHtml += `<span style="background: rgba(0, 198, 255, 0.15); border: 1px solid rgba(0, 198, 255, 0.3); color: #00c6ff; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
-                    ${symbol}
-                    <span onclick="app.removeBlacklistSymbol('${symbol}')" style="cursor: pointer; font-size: 14px; line-height: 1; color: rgba(255,255,255,0.7); font-weight: bold;">&times;</span>
+                    ${symbol} (待儲存)
+                    <span onclick="app.removePendingBlacklistSymbol('${symbol}')" style="cursor: pointer; font-size: 14px; line-height: 1; color: rgba(255,255,255,0.7); font-weight: bold;" title="移除此暫存幣種">&times;</span>
                 </span>`;
             });
             customContainer.innerHTML = customHtml;
@@ -4420,8 +4425,8 @@ class SNRTracer {
             return;
         }
 
-        if (this.customBlacklist.includes(rawVal)) {
-            alert(`幣種 ${rawVal} 已存在於您的自訂排除名單中！`);
+        if ((this.customBlacklist && this.customBlacklist.includes(rawVal)) || (this.pendingBlacklist && this.pendingBlacklist.includes(rawVal))) {
+            alert(`幣種 ${rawVal} 已存在於雲端去除列表或待儲存列表中！`);
             inputEl.value = '';
             return;
         }
@@ -4447,11 +4452,12 @@ class SNRTracer {
                 return;
             }
 
-            // 驗證成功，加入黑名單
-            this.customBlacklist.push(rawVal);
+            // 驗證成功，加入待儲存列表
+            if (!this.pendingBlacklist) this.pendingBlacklist = [];
+            this.pendingBlacklist.push(rawVal);
             this.renderCustomBlacklistTags();
             inputEl.value = '';
-            alert(`✅ 驗證成功！已將 ${rawVal} 加入排除清單，請點擊「儲存黑名單至雲端」以完成同步！`);
+            alert(`✅ 驗證成功！已將 ${rawVal} 加入下方「自訂排除幣種列表」，請點擊「儲存黑名單至雲端」以完成上傳！`);
 
         } catch (e) {
             console.error('Blacklist verification error:', e);
@@ -4464,15 +4470,61 @@ class SNRTracer {
         }
     }
 
-    removeBlacklistSymbol(symbol) {
-        this.customBlacklist = this.customBlacklist.filter(s => s !== symbol);
+    removePendingBlacklistSymbol(symbol) {
+        if (this.pendingBlacklist) {
+            this.pendingBlacklist = this.pendingBlacklist.filter(s => s !== symbol);
+        }
         this.renderCustomBlacklistTags();
+    }
+
+    removeCloudBlacklistSymbol(symbol) {
+        if (!confirm(`確定要將 ${symbol} 從雲端排除黑名單中移除並恢復掃描嗎？`)) {
+            return;
+        }
+        if (this.customBlacklist) {
+            this.customBlacklist = this.customBlacklist.filter(s => s !== symbol);
+        }
+        if (this.currentUser) {
+            const email = this.currentUser.email;
+            const configKey = `snr_blacklist_config_${email}`;
+            localStorage.setItem(configKey, JSON.stringify(this.customBlacklist));
+            if (this.db) {
+                const safeEmail = email.replace(/\./g, '_');
+                this.db.ref('users/' + safeEmail).update({
+                    blacklistedSymbols: this.customBlacklist || []
+                });
+            }
+        }
+        this.renderCustomBlacklistTags();
+        alert(`已從雲端黑名單中成功移除 ${symbol}！`);
+    }
+
+    removeBlacklistSymbol(symbol) {
+        this.removePendingBlacklistSymbol(symbol);
     }
 
     saveBlacklistConfig() {
         if (!this.currentUser) {
             alert('請先登入帳戶再儲存黑名單設定！');
             return;
+        }
+
+        if (!this.pendingBlacklist || this.pendingBlacklist.length === 0) {
+            if (!this.customBlacklist || this.customBlacklist.length === 0) {
+                alert('目前沒有待儲存的自訂排除幣種！');
+                return;
+            }
+        }
+
+        // 將 pendingBlacklist 合併至 customBlacklist 並清空 pendingBlacklist
+        if (!this.customBlacklist) this.customBlacklist = [];
+        if (this.pendingBlacklist && this.pendingBlacklist.length > 0) {
+            this.pendingBlacklist.forEach(symbol => {
+                if (!this.customBlacklist.includes(symbol)) {
+                    this.customBlacklist.push(symbol);
+                }
+            });
+            this.pendingBlacklist = [];
         }
 
         const email = this.currentUser.email;
@@ -4488,21 +4540,8 @@ class SNRTracer {
             });
         }
 
-        alert('🎉 黑名單設定已成功儲存！已直接上傳同步至 Firebase 雲端！');
+        alert('🎉 黑名單已成功上傳並同步至 Firebase 雲端！上傳的幣種已移入「系統預設與雲端已去除幣種」中！');
         this.syncToCloud();
-    }
-
-    toggleStrategyConfig() {
-        const content = document.getElementById('strategy-config-content');
-        const arrow = document.getElementById('strategy-config-arrow');
-        if (content && arrow) {
-            content.classList.toggle('hidden');
-            if (content.classList.contains('hidden')) {
-                arrow.style.transform = 'rotate(0deg)';
-            } else {
-                arrow.style.transform = 'rotate(180deg)';
-            }
-        }
     }
 
     saveStrategyConfig() {
