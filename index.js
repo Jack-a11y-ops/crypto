@@ -2110,7 +2110,10 @@ class SNRTracer {
                     const cloudData = snapshot.val();
                     let cloudHistory = cloudData.history || [];
                 if (cloudData.blacklistedSymbols && Array.isArray(cloudData.blacklistedSymbols)) {
-                    this.customBlacklist = cloudData.blacklistedSymbols;
+                    // 若本地無資料時從雲端同步，否則優先保留本地最新黑名單
+                    if (!this.customBlacklist || this.customBlacklist.length === 0) {
+                        this.customBlacklist = cloudData.blacklistedSymbols;
+                    }
                     this.renderCustomBlacklistTags();
                 }
                     
@@ -4027,7 +4030,10 @@ class SNRTracer {
                 const cloudData = snapshot.val();
                 cloudHistory = cloudData.history || [];
                 if (cloudData.blacklistedSymbols && Array.isArray(cloudData.blacklistedSymbols)) {
-                    this.customBlacklist = cloudData.blacklistedSymbols;
+                    // 若本地無資料時從雲端同步，否則優先保留本地最新黑名單
+                    if (!this.customBlacklist || this.customBlacklist.length === 0) {
+                        this.customBlacklist = cloudData.blacklistedSymbols;
+                    }
                     this.renderCustomBlacklistTags();
                 }
                 if (cloudData.paperBalance !== undefined) {
@@ -4355,22 +4361,41 @@ class SNRTracer {
     }
 
     renderCustomBlacklistTags() {
-        const container = document.getElementById('custom-blacklist-tags');
-        if (!container) return;
+        const customContainer = document.getElementById('custom-blacklist-tags');
+        const defaultContainer = document.getElementById('default-blacklist-tags');
         
-        if (!this.customBlacklist || this.customBlacklist.length === 0) {
-            container.innerHTML = `<span style="font-size: 12px; color: var(--text-muted);">尚未新增自訂排除幣種。</span>`;
-            return;
+        // 1. 渲染上方的系統預設與雲端已去除幣種欄位
+        if (defaultContainer) {
+            let defaultHtml = `
+                <span style="background: rgba(255, 71, 87, 0.15); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff6b81; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">RLUSD (穩定幣)</span>
+                <span style="background: rgba(255, 71, 87, 0.15); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff6b81; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">FDUSD (穩定幣)</span>
+                <span style="background: rgba(255, 71, 87, 0.15); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff6b81; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">UUSDT (排除標的)</span>
+                <span style="background: rgba(255, 71, 87, 0.15); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff6b81; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">TRXUSDT (排除標的)</span>
+            `;
+            if (this.customBlacklist && this.customBlacklist.length > 0) {
+                this.customBlacklist.forEach(symbol => {
+                    defaultHtml += `<span style="background: rgba(155, 89, 182, 0.2); border: 1px solid rgba(155, 89, 182, 0.4); color: #d6a2e8; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">☁️ ${symbol} (雲端已去除)</span>`;
+                });
+            }
+            defaultContainer.innerHTML = defaultHtml;
         }
 
-        let html = '';
-        this.customBlacklist.forEach(symbol => {
-            html += `<span style="background: rgba(0, 198, 255, 0.15); border: 1px solid rgba(0, 198, 255, 0.3); color: #00c6ff; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
-                ${symbol}
-                <span onclick="app.removeBlacklistSymbol('${symbol}')" style="cursor: pointer; font-size: 14px; line-height: 1; color: rgba(255,255,255,0.7); font-weight: bold;">&times;</span>
-            </span>`;
-        });
-        container.innerHTML = html;
+        // 2. 渲染下方的自訂排除列表 (帶有刪除按鈕)
+        if (customContainer) {
+            if (!this.customBlacklist || this.customBlacklist.length === 0) {
+                customContainer.innerHTML = `<span style="font-size: 12px; color: var(--text-muted);">尚未新增自訂排除幣種。</span>`;
+                return;
+            }
+
+            let customHtml = '';
+            this.customBlacklist.forEach(symbol => {
+                customHtml += `<span style="background: rgba(0, 198, 255, 0.15); border: 1px solid rgba(0, 198, 255, 0.3); color: #00c6ff; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                    ${symbol}
+                    <span onclick="app.removeBlacklistSymbol('${symbol}')" style="cursor: pointer; font-size: 14px; line-height: 1; color: rgba(255,255,255,0.7); font-weight: bold;">&times;</span>
+                </span>`;
+            });
+            customContainer.innerHTML = customHtml;
+        }
     }
 
     async addBlacklistSymbol() {
@@ -4454,6 +4479,14 @@ class SNRTracer {
         const configKey = `snr_blacklist_config_${email}`;
         
         localStorage.setItem(configKey, JSON.stringify(this.customBlacklist));
+        this.renderCustomBlacklistTags();
+
+        if (this.db) {
+            const safeEmail = email.replace(/\./g, '_');
+            this.db.ref('users/' + safeEmail).update({
+                blacklistedSymbols: this.customBlacklist || []
+            });
+        }
 
         alert('🎉 黑名單設定已成功儲存！已直接上傳同步至 Firebase 雲端！');
         this.syncToCloud();
