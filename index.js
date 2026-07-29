@@ -490,6 +490,12 @@ class SNRTracer {
         }
 
         // 儲存策略參數設定按鈕監聽
+        
+        const blacklistHeader = document.querySelector('.blacklist-config-header');
+        if (blacklistHeader) {
+            blacklistHeader.addEventListener('click', () => this.toggleBlacklistConfig());
+        }
+
         const saveStrategyConfigBtn = document.getElementById('save-strategy-config-btn');
         if (saveStrategyConfigBtn) {
             saveStrategyConfigBtn.addEventListener('click', () => {
@@ -4307,6 +4313,140 @@ class SNRTracer {
             lossRatioEl.value = this.strategyConfig.riskRatio;
             this.calculateLeverage();
         }
+    }
+
+
+    toggleBlacklistConfig() {
+        const content = document.getElementById('blacklist-config-content');
+        const arrow = document.getElementById('blacklist-config-arrow');
+        if (content && arrow) {
+            content.classList.toggle('hidden');
+            if (content.classList.contains('hidden')) {
+                arrow.style.transform = 'rotate(0deg)';
+            } else {
+                arrow.style.transform = 'rotate(180deg)';
+            }
+        }
+    }
+
+    initBlacklistConfig() {
+        if (!this.currentUser) return;
+        const email = this.currentUser.email;
+        const configKey = `snr_blacklist_config_${email}`;
+        try {
+            const saved = localStorage.getItem(configKey);
+            if (saved) {
+                this.customBlacklist = JSON.parse(saved);
+            }
+        } catch (e) {
+            this.customBlacklist = [];
+        }
+        this.renderCustomBlacklistTags();
+    }
+
+    renderCustomBlacklistTags() {
+        const container = document.getElementById('custom-blacklist-tags');
+        if (!container) return;
+        
+        if (!this.customBlacklist || this.customBlacklist.length === 0) {
+            container.innerHTML = `<span style="font-size: 12px; color: var(--text-muted);">尚未新增自訂排除幣種。</span>`;
+            return;
+        }
+
+        let html = '';
+        this.customBlacklist.forEach(symbol => {
+            html += `<span style="background: rgba(0, 198, 255, 0.15); border: 1px solid rgba(0, 198, 255, 0.3); color: #00c6ff; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                ${symbol}
+                <span onclick="app.removeBlacklistSymbol('${symbol}')" style="cursor: pointer; font-size: 14px; line-height: 1; color: rgba(255,255,255,0.7); font-weight: bold;">&times;</span>
+            </span>`;
+        });
+        container.innerHTML = html;
+    }
+
+    async addBlacklistSymbol() {
+        const inputEl = document.getElementById('blacklist-input');
+        if (!inputEl) return;
+        
+        let rawVal = inputEl.value.trim().toUpperCase().replace('/', '');
+        if (!rawVal) {
+            alert('請輸入欲排除的幣種名稱！');
+            return;
+        }
+
+        // 自動補全 USDT
+        if (!rawVal.endsWith('USDT')) {
+            rawVal += 'USDT';
+        }
+
+        const defaultBlacklist = ['RLUSDUSDT', 'RLUSD', 'FDUSDUSDT', 'FDUSD', 'UUSDT', 'TRXUSDT'];
+        if (defaultBlacklist.includes(rawVal) || rawVal.includes('RLUSD') || rawVal.includes('FDUSD')) {
+            alert('該幣種屬於系統預設已被去除的標的，無須重複新增！');
+            inputEl.value = '';
+            return;
+        }
+
+        if (this.customBlacklist.includes(rawVal)) {
+            alert(`幣種 ${rawVal} 已存在於您的自訂排除名單中！`);
+            inputEl.value = '';
+            return;
+        }
+
+        const addBtn = document.getElementById('add-blacklist-btn');
+        const origText = addBtn ? addBtn.innerText : '';
+        if (addBtn) {
+            addBtn.innerText = '🔍 幣安 API 驗證中...';
+            addBtn.disabled = true;
+        }
+
+        try {
+            // 向幣安 API 即時驗證該幣種交易對是否存在
+            const verifyUrl = `https://data-api.binance.vision/api/v3/ticker/24hr?symbol=${rawVal}`;
+            const res = await fetch(verifyUrl);
+            if (!res.ok) {
+                alert(`❌ 幣種驗證失敗：幣安 (Binance) 交易所不存在交易對「${rawVal}」，請確認名稱是否正確！`);
+                return;
+            }
+            const data = await res.json();
+            if (!data || !data.symbol) {
+                alert(`❌ 幣種驗證失敗：無效的交易對「${rawVal}」！`);
+                return;
+            }
+
+            // 驗證成功，加入黑名單
+            this.customBlacklist.push(rawVal);
+            this.renderCustomBlacklistTags();
+            inputEl.value = '';
+            alert(`✅ 驗證成功！已將 ${rawVal} 加入排除清單，請點擊「儲存黑名單至雲端」以完成同步！`);
+
+        } catch (e) {
+            console.error('Blacklist verification error:', e);
+            alert(`❌ 網路驗證錯誤：無法連接幣安 API 驗證 ${rawVal}`);
+        } finally {
+            if (addBtn) {
+                addBtn.innerText = origText;
+                addBtn.disabled = false;
+            }
+        }
+    }
+
+    removeBlacklistSymbol(symbol) {
+        this.customBlacklist = this.customBlacklist.filter(s => s !== symbol);
+        this.renderCustomBlacklistTags();
+    }
+
+    saveBlacklistConfig() {
+        if (!this.currentUser) {
+            alert('請先登入帳戶再儲存黑名單設定！');
+            return;
+        }
+
+        const email = this.currentUser.email;
+        const configKey = `snr_blacklist_config_${email}`;
+        
+        localStorage.setItem(configKey, JSON.stringify(this.customBlacklist));
+
+        alert('🎉 黑名單設定已成功儲存！已直接上傳同步至 Firebase 雲端！');
+        this.syncToCloud();
     }
 
     toggleStrategyConfig() {
