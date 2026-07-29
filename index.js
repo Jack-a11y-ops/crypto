@@ -4318,10 +4318,13 @@ class SNRTracer {
 
 
     toggleBlacklistConfig() {
+        console.log('[BlacklistConfig] toggleBlacklistConfig 被呼叫！');
         const content = document.getElementById('blacklist-config-content');
         const arrow = document.getElementById('blacklist-config-arrow');
+        console.log('[BlacklistConfig] content element:', content, '| arrow element:', arrow);
         if (content && arrow) {
             content.classList.toggle('hidden');
+            console.log('[BlacklistConfig] hidden 狀態:', content.classList.contains('hidden'));
             if (content.classList.contains('hidden')) {
                 arrow.style.transform = 'rotate(0deg)';
             } else {
