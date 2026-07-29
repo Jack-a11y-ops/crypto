@@ -4565,6 +4565,20 @@ class SNRTracer {
         this.syncToCloud();
     }
 
+    toggleStrategyConfig() {
+        const content = document.getElementById('strategy-config-content');
+        const arrow = document.getElementById('strategy-config-arrow');
+        if (content && arrow) {
+            content.classList.toggle('hidden');
+            if (content.classList.contains('hidden')) {
+                arrow.style.transform = 'rotate(0deg)';
+            } else {
+                arrow.style.transform = 'rotate(180deg)';
+                setTimeout(() => content.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+            }
+        }
+    }
+
     saveStrategyConfig() {
         if (!this.currentUser) {
             alert('請先登入帳戶再儲存設定');
