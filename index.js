@@ -1009,12 +1009,24 @@ class SNRTracer {
             const fetchLimit = Math.min(limit - allKlines.length, 1000);
             if (fetchLimit <= 0) break;
 
-            let url = `https://api.binance.com/api/v3/klines?symbol=${cleanSymbol}&interval=${interval}&limit=${fetchLimit}`;
+            let url = `https://data-api.binance.vision/api/v3/klines?symbol=${cleanSymbol}&interval=${interval}&limit=${fetchLimit}`;
             if (lastEndTime !== null) {
                 url += `&endTime=${lastEndTime}`;
             }
 
-            const response = await fetch(url);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            let response;
+            try {
+                response = await fetch(url, { signal: controller.signal });
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    throw new Error('幣安 API 連線逾時，請檢查網路狀態！');
+                }
+                throw e;
+            } finally {
+                clearTimeout(timeoutId);
+            }
             if (!response.ok) throw new Error('Binance API response not ok');
             const data = await response.json();
             if (!data || data.length === 0) break;
@@ -1486,7 +1498,7 @@ class SNRTracer {
             }
 
             // 1. 獲取成交量前 50 大 USDT 交易對
-            const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
+            const tickerUrl = 'https://data-api.binance.vision/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
                 .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT')
@@ -2196,7 +2208,7 @@ class SNRTracer {
                 // 往前推算 500 根 K 線作為查詢起點
                 const queryStartTime = record.id - 500 * intervalMs;
 
-                const url = `https://api.binance.com/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=1000`;
+                const url = `https://data-api.binance.vision/api/v3/klines?symbol=${record.symbol}&interval=${record.interval}&startTime=${queryStartTime}&limit=1000`;
                 const response = await fetch(url);
                 const klines = await response.json();
 
@@ -3222,7 +3234,7 @@ class SNRTracer {
         try {
             // 1. 獲取成交量前 50 大 USDT 交易對
             this.updateBacktestProgress('正在獲取前50大熱門標的...', 2);
-            const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
+            const tickerUrl = 'https://data-api.binance.vision/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
                 .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT')
@@ -3310,7 +3322,7 @@ class SNRTracer {
         try {
             // 1. 獲取成交量前 50 大 USDT 交易對
             this.updateBacktestProgress('正在獲取前50大熱門標的...', 2);
-            const tickerUrl = 'https://api.binance.com/api/v3/ticker/24hr';
+            const tickerUrl = 'https://data-api.binance.vision/api/v3/ticker/24hr';
             const tickers = await (await fetch(tickerUrl)).json();
             const top50 = tickers
                 .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT')
