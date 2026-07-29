@@ -194,7 +194,7 @@
             </div>
             <!-- 策略參數自定義設定卡片 -->
             <div class="card strategy-config-card" style="margin-bottom: 20px;">
-                <div class="strategy-config-header" onclick="app.toggleStrategyConfig()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                <div class="strategy-config-header" onclick="if(window.app) window.app.toggleStrategyConfig();" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
                     <h2 style="font-size: 16px; font-weight: 600; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px;">⚙️ 策略參數自定義與雲端同步設定</h2>
                     <span id="strategy-config-arrow" style="font-size: 12px; color: var(--text-muted); transition: transform 0.3s;">▼</span>
                 </div>
@@ -231,7 +231,7 @@
             </div>
             <!-- 排除不掃描幣種 (黑名單) 設定卡片 -->
             <div class="card blacklist-config-card" style="margin-bottom: 20px;">
-                <div class="blacklist-config-header" onclick="app.toggleBlacklistConfig()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                <div class="blacklist-config-header" onclick="if(window.app) window.app.toggleBlacklistConfig();" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
                     <h2 style="font-size: 16px; font-weight: 600; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px;">🚫 排除不掃描幣種 (黑名單) 與雲端同步設定</h2>
                     <span id="blacklist-config-arrow" style="font-size: 12px; color: var(--text-muted); transition: transform 0.3s;">▼</span>
                 </div>

@@ -33,6 +33,7 @@ class SNRTracer {
         this.backtestChart = null; // 回測資金曲線圖表
         this.backtestLineSeries = null; // 回測資金折線圖
         this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
+        this.customBlacklist = []; // 使用者自訂排除掃描幣種黑名單
         this.paperBalance = 10000.0;
         this.priceUpdateTimer = null; // 背景自動更新價格定時器
 
