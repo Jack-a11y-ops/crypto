@@ -678,6 +678,7 @@ async function run() {
         let notified = userData.notified || {};
         
         const strategyConfig = userData.strategyConfig || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
+        const customBlacklist = userData.blacklistedSymbols || [];
         globalStrategyConfig = strategyConfig;
         const emaPeriod = strategyConfig.emaPeriod || 50;
         const atrMultiplier = strategyConfig.atrMultiplier || 1.5;
@@ -703,7 +704,7 @@ async function run() {
         }
 
         const top50 = tickers
-            .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT')
+            .filter(t => t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT' && !customBlacklist.includes(t.symbol))
             .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
             .slice(0, 50);
 

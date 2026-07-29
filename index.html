@@ -229,6 +229,51 @@
                     </div>
                 </div>
             </div>
+            <!-- 排除不掃描幣種 (黑名單) 設定卡片 -->
+            <div class="card blacklist-config-card" style="margin-bottom: 20px;">
+                <div class="blacklist-config-header" onclick="app.toggleBlacklistConfig()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                    <h2 style="font-size: 16px; font-weight: 600; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px;">🚫 排除不掃描幣種 (黑名單) 與雲端同步設定</h2>
+                    <span id="blacklist-config-arrow" style="font-size: 12px; color: var(--text-muted); transition: transform 0.3s;">▼</span>
+                </div>
+                <div id="blacklist-config-content" class="blacklist-config-content hidden" style="margin-top: 15px;">
+                    <p class="config-tip" style="font-size: 12px; color: var(--text-muted); line-height: 1.5; text-align: left; margin: 0 0 15px 0;">
+                        此處可自訂希望雷達掃描與 Telegram 警報跳過的幣種（如熱門迷因幣或高波動幣種）。輸入幣種名稱時系統將向幣安 API <strong>即時驗證幣種是否存在</strong>，防止打錯名稱。按儲存後將直接同步至 Firebase 雲端資料庫。
+                    </p>
+                    
+                    <!-- 系統預設已去除幣種展示區 -->
+                    <div style="margin-bottom: 15px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 12px 15px; border-radius: 8px;">
+                        <label style="display: block; font-size: 12px; font-weight: 600; color: #ff6b81; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                            🔒 系統預設已去除幣種 (不可變更)
+                        </label>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="default-blacklist-tags">
+                            <span style="background: rgba(255, 71, 87, 0.15); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff6b81; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">RLUSD (穩定幣)</span>
+                            <span style="background: rgba(255, 71, 87, 0.15); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff6b81; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">FDUSD (穩定幣)</span>
+                            <span style="background: rgba(255, 71, 87, 0.15); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff6b81; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">UUSDT (排除標的)</span>
+                            <span style="background: rgba(255, 71, 87, 0.15); border: 1px solid rgba(255, 71, 87, 0.3); color: #ff6b81; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">TRXUSDT (排除標的)</span>
+                        </div>
+                    </div>
+
+                    <!-- 使用者自訂排除幣種區 -->
+                    <div style="margin-bottom: 15px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 12px 15px; border-radius: 8px;">
+                        <label style="display: block; font-size: 12px; font-weight: 600; color: var(--accent-color); margin-bottom: 8px;">
+                            ✏️ 自訂排除幣種列表
+                        </label>
+                        <div id="custom-blacklist-tags" style="display: flex; gap: 8px; flex-wrap: wrap; min-height: 28px; align-items: center;">
+                            <span style="font-size: 12px; color: var(--text-muted);">尚未新增自訂排除幣種。</span>
+                        </div>
+                    </div>
+
+                    <!-- 新增幣種與驗證區 -->
+                    <div style="display: flex; gap: 10px; align-items: center; max-width: 500px; margin-bottom: 15px;">
+                        <input type="text" id="blacklist-input" placeholder="輸入幣種 (例如: DOGEUSDT 或 PEPE)..." style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px; text-transform: uppercase;">
+                        <button id="add-blacklist-btn" class="primary-btn-sm" style="width: auto; padding: 8px 16px; white-space: nowrap;">+ 驗證並新增</button>
+                    </div>
+
+                    <div>
+                        <button id="save-blacklist-config-btn" class="primary-btn-sm" style="width: auto; padding: 8px 20px; background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%); border: none; color: #000; font-weight: 700;">儲存黑名單至雲端</button>
+                    </div>
+                </div>
+            </div>
             <div class="card scanner-dashboard">
                 <div class="scanner-header">
                     <div class="scanner-header-text">

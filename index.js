@@ -488,6 +488,24 @@ class SNRTracer {
             });
         }
 
+        // 黑名單按鈕事件綁定
+        const addBlacklistBtn = document.getElementById('add-blacklist-btn');
+        if (addBlacklistBtn) {
+            addBlacklistBtn.addEventListener('click', () => this.addBlacklistSymbol());
+        }
+        const saveBlacklistConfigBtn = document.getElementById('save-blacklist-config-btn');
+        if (saveBlacklistConfigBtn) {
+            saveBlacklistConfigBtn.addEventListener('click', () => this.saveBlacklistConfig());
+        }
+        const blacklistInput = document.getElementById('blacklist-input');
+        if (blacklistInput) {
+            blacklistInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.addBlacklistSymbol();
+                }
+            });
+        }
+
         // 歷史 K 線 Modal 關閉監聽
         const closeModalBtn = document.getElementById('close-modal-btn');
         if (closeModalBtn) {
@@ -883,6 +901,7 @@ class SNRTracer {
         this.initStrategyConfig();
         this.initPaperAccount();
         this.initTelegramConfig();
+        this.initBlacklistConfig();
         
         // 登入成功後，主動依據當前 active tab 做切換與初始化渲染 (確保首頁預設為歷史紀錄時能自動加載數據)
         const activeTab = document.querySelector('.tab-btn.active');
@@ -2055,6 +2074,10 @@ class SNRTracer {
                 if (snapshot.exists()) {
                     const cloudData = snapshot.val();
                     let cloudHistory = cloudData.history || [];
+                if (cloudData.blacklistedSymbols && Array.isArray(cloudData.blacklistedSymbols)) {
+                    this.customBlacklist = cloudData.blacklistedSymbols;
+                    this.renderCustomBlacklistTags();
+                }
                     
                     // 移除對應 id 的紀錄
                     cloudHistory = cloudHistory.filter(r => r.id !== id);
@@ -3968,6 +3991,10 @@ class SNRTracer {
             if (snapshot.exists()) {
                 const cloudData = snapshot.val();
                 cloudHistory = cloudData.history || [];
+                if (cloudData.blacklistedSymbols && Array.isArray(cloudData.blacklistedSymbols)) {
+                    this.customBlacklist = cloudData.blacklistedSymbols;
+                    this.renderCustomBlacklistTags();
+                }
                 if (cloudData.paperBalance !== undefined) {
                     cloudPaperBalance = parseFloat(cloudData.paperBalance);
                 }
@@ -4015,6 +4042,7 @@ class SNRTracer {
                     history: mergedHistory,
                     telegramConfig: telegramConfig,
                     strategyConfig: strategyConfig,
+                    blacklistedSymbols: this.customBlacklist || [],
                     paperBalance: finalPaperBalance,
                     updatedAt: firebase.database.ServerValue.TIMESTAMP
                 });
