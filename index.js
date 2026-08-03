@@ -3680,12 +3680,38 @@ class SNRTracer {
 
         let hasUpdates = false;
 
-        // 一次最多查詢最近 5 筆 PENDING 紀錄的結算狀態，避免 Rate Limit
-        const maxQueries = Math.min(pendingRecords.length, 5);
-        for (let i = 0; i < maxQueries; i++) {
+        // 1. 先透過 24hr Ticker API 一次性批量抓取全市場最新現價，確保所有 PENDING 紀錄的現價與漲跌幅第一時間全部更新！
+        try {
+            const tickersRes = await fetch('https://data-api.binance.vision/api/v3/ticker/24hr');
+            if (tickersRes.ok) {
+                const tickers = await tickersRes.json();
+                if (Array.isArray(tickers)) {
+                    const priceMap = {};
+                    tickers.forEach(t => {
+                        priceMap[t.symbol] = parseFloat(t.lastPrice);
+                    });
+
+                    pendingRecords.forEach(r => {
+                        if (priceMap[r.symbol] !== undefined && !isNaN(priceMap[r.symbol])) {
+                            const latestPrice = priceMap[r.symbol];
+                            const pct = ((latestPrice - r.entry) / r.entry) * 100;
+                            if (r.currentPrice !== latestPrice || r.percentChange !== pct) {
+                                r.currentPrice = latestPrice;
+                                r.percentChange = pct;
+                                hasUpdates = true;
+                            }
+                        }
+                    });
+                }
+            }
+        } catch (e) {
+            console.warn('Batch ticker fetch error, falling back to klines:', e);
+        }
+
+        // 2. 移除 5 筆限制，對所有的 PENDING 紀錄進行 K 線歷史回溯與結算檢查 (TP / SL / 移動止損)
+        for (let i = 0; i < pendingRecords.length; i++) {
             const record = pendingRecords[i];
             try {
-                // 根據時間週期，計算一根 K 線的毫秒數，並往前退 1 根 K 線作為查詢起點
                 let intervalMs = 60 * 1000;
                 if (record.interval === '5m') intervalMs = 5 * 60 * 1000;
                 else if (record.interval === '15m') intervalMs = 15 * 60 * 1000;
@@ -3700,7 +3726,7 @@ class SNRTracer {
 
                 if (!Array.isArray(klines) || klines.length === 0) continue;
 
-                // 取得當前最新價格與自進場點以來的漲跌幅
+                // 若單幣 K 線能成功拿到最新價，雙重比對更新
                 const currentPrice = parseFloat(klines[klines.length - 1][4]);
                 const percentChange = ((currentPrice - record.entry) / record.entry) * 100;
                 
@@ -3718,26 +3744,21 @@ class SNRTracer {
                     hasUpdates = true;
                 }
 
-                // 每次歷史回溯重播前，先將狀態重置為開倉初始狀態，防止已觸發保本的狀態殘留導致歷史誤判
                 record.sl = initialSl;
                 record.isBreakEven = false;
 
-                // 遍歷 K 線進行結算與移動止損檢測
                 for (let k = 0; k < klines.length; k++) {
                     const klineOpenTime = klines[k][0];
-                    // 改為小於 record.id，跳過與開倉時間重疊的那根 K 線，防範進場前開盤之歷史插針誤判
                     if (klineOpenTime < record.id) continue;
 
                     const high = parseFloat(klines[k][2]);
                     const low = parseFloat(klines[k][3]);
-
                     const cleanSymbol = record.symbol.replace('USDT', '');
 
                     let justTriggeredBE = false;
                     let tempSl = record.sl;
                     let tempIsBreakEven = record.isBreakEven;
 
-                    // 1. 移動止損 (Break-even) 預判定 (獲利達 1R 時，標記準備將止損移至 Entry 保本點)
                     if (!record.isBreakEven) {
                         if (record.type === 'LONG') {
                             if (high >= record.entry + oneRSpace) {
@@ -3754,13 +3775,11 @@ class SNRTracer {
                         }
                     }
 
-                    // 2. TP / SL 結算判定 (當根剛觸發保本時，止損判定仍使用初始止損 initialSl，避免當根 K 線震盪直接被保本平倉)
                     const activeSl = justTriggeredBE ? initialSl : record.sl;
 
                     if (record.type === 'LONG') {
                         if (low <= activeSl) {
                             record.status = 'SL';
-                            // 同根 K 線若跌破 initialSl 則視為真實止損，不可算作保本
                             record.isBreakEven = false;
                             record.sl = initialSl;
                             this.settlePaperTrade(record, 'SL');
@@ -3779,7 +3798,7 @@ class SNRTracer {
                             hasUpdates = true;
                             
                             this.showNotification(
-                                `🎯 交易已結算 (Take Profit)`,
+                                `🎉 交易已結算 (Take Profit)`,
                                 `${cleanSymbol} LONG 交易已成功止盈於 $${this.formatPrice(record.tp)}！`
                             );
                             this.sendTelegramSettlementNotification(record, 'TP');
@@ -3788,7 +3807,6 @@ class SNRTracer {
                     } else if (record.type === 'SHORT') {
                         if (high >= activeSl) {
                             record.status = 'SL';
-                            // 同根 K 線若突破 initialSl 則視為真實止損，不可算作保本
                             record.isBreakEven = false;
                             record.sl = initialSl;
                             this.settlePaperTrade(record, 'SL');
@@ -3807,7 +3825,7 @@ class SNRTracer {
                             hasUpdates = true;
                             
                             this.showNotification(
-                                `🎯 交易已結算 (Take Profit)`,
+                                `🎉 交易已結算 (Take Profit)`,
                                 `${cleanSymbol} SHORT 交易已成功止盈於 $${this.formatPrice(record.tp)}！`
                             );
                             this.sendTelegramSettlementNotification(record, 'TP');
@@ -3815,38 +3833,36 @@ class SNRTracer {
                         }
                     }
 
-                    // 3. 若當根 K 線結束且未被平倉，正式寫入移動止損狀態並發送通知
                     if (justTriggeredBE && record.status === 'PENDING') {
                         record.sl = tempSl;
                         record.isBreakEven = tempIsBreakEven;
                         hasUpdates = true;
 
                         this.showNotification(
-                            `🛡️ 移動止損已啟用`,
-                            `${cleanSymbol} ${record.type} 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
+                            `🛡️ 移動止損已觸發`,
+                            `${cleanSymbol} ${record.type} 交易獲利已達 1R，止損已移至開倉價 $${this.formatPrice(record.entry)}！`
                         );
                         if (!record.notified1to1) {
-                                    record.notified1to1 = true;
-                                    this.sendTelegramBreakEvenNotification(record);
-                                }
+                            record.notified1to1 = true;
+                            this.sendTelegramBreakEvenNotification(record);
+                        }
                     }
                 }
 
-                // 4. 當前最新價格 (currentPrice) 的即時 TP/SL 與移動止損判定，補足當前未完結 K 線的最新波動
                 if (record.status === 'PENDING') {
                     const cleanSymbol = record.symbol.replace('USDT', '');
+                    const curP = record.currentPrice || 0;
                     
-                    // (A) 移動止損即時判定
                     if (!record.isBreakEven) {
                         if (record.type === 'LONG') {
-                            if (currentPrice >= record.entry + oneRSpace) {
+                            if (curP >= record.entry + oneRSpace) {
                                 record.sl = record.entry;
                                 record.isBreakEven = true;
                                 hasUpdates = true;
                                 
                                 this.showNotification(
-                                    `🛡️ 移動止損已啟用`,
-                                    `${cleanSymbol} LONG 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
+                                    `🛡️ 移動止損已觸發`,
+                                    `${cleanSymbol} LONG 交易獲利已達 1R，止損已移至開倉價 $${this.formatPrice(record.entry)}！`
                                 );
                                 if (!record.notified1to1) {
                                     record.notified1to1 = true;
@@ -3854,14 +3870,14 @@ class SNRTracer {
                                 }
                             }
                         } else if (record.type === 'SHORT') {
-                            if (currentPrice <= record.entry - oneRSpace) {
+                            if (curP <= record.entry - oneRSpace) {
                                 record.sl = record.entry;
                                 record.isBreakEven = true;
                                 hasUpdates = true;
-                                
+
                                 this.showNotification(
-                                    `🛡️ 移動止損已啟用`,
-                                    `${cleanSymbol} SHORT 交易獲利已達 1R，止損已移至進場價 $${this.formatPrice(record.entry)}。`
+                                    `🛡️ 移動止損已觸發`,
+                                    `${cleanSymbol} SHORT 交易獲利已達 1R，止損已移至開倉價 $${this.formatPrice(record.entry)}！`
                                 );
                                 if (!record.notified1to1) {
                                     record.notified1to1 = true;
@@ -3871,9 +3887,8 @@ class SNRTracer {
                         }
                     }
 
-                    // (B) TP / SL 即時判定
                     if (record.type === 'LONG') {
-                        if (currentPrice <= record.sl) {
+                        if (curP <= record.sl) {
                             record.status = 'SL';
                             this.settlePaperTrade(record, 'SL');
                             hasUpdates = true;
@@ -3883,19 +3898,19 @@ class SNRTracer {
                                 `${cleanSymbol} LONG 交易已被止損於 $${this.formatPrice(record.sl)}。`
                             );
                             this.sendTelegramSettlementNotification(record, 'SL');
-                        } else if (currentPrice >= record.tp) {
+                        } else if (curP >= record.tp) {
                             record.status = 'TP';
                             this.settlePaperTrade(record, 'TP');
                             hasUpdates = true;
                             
                             this.showNotification(
-                                `🎯 交易已結算 (Take Profit)`,
+                                `🎉 交易已結算 (Take Profit)`,
                                 `${cleanSymbol} LONG 交易已成功止盈於 $${this.formatPrice(record.tp)}！`
                             );
                             this.sendTelegramSettlementNotification(record, 'TP');
                         }
                     } else if (record.type === 'SHORT') {
-                        if (currentPrice >= record.sl) {
+                        if (curP >= record.sl) {
                             record.status = 'SL';
                             this.settlePaperTrade(record, 'SL');
                             hasUpdates = true;
@@ -3905,13 +3920,13 @@ class SNRTracer {
                                 `${cleanSymbol} SHORT 交易已被止損於 $${this.formatPrice(record.sl)}。`
                             );
                             this.sendTelegramSettlementNotification(record, 'SL');
-                        } else if (currentPrice <= record.tp) {
+                        } else if (curP <= record.tp) {
                             record.status = 'TP';
                             this.settlePaperTrade(record, 'TP');
                             hasUpdates = true;
                             
                             this.showNotification(
-                                `🎯 交易已結算 (Take Profit)`,
+                                `🎉 交易已結算 (Take Profit)`,
                                 `${cleanSymbol} SHORT 交易已成功止盈於 $${this.formatPrice(record.tp)}！`
                             );
                             this.sendTelegramSettlementNotification(record, 'TP');
@@ -3933,7 +3948,7 @@ class SNRTracer {
             localStorage.setItem(historyKey, JSON.stringify(history));
             this.updatePaperAccountUI();
             this.renderHistory(false);
-            this.syncToCloud(); // 結算狀態更新後，異步同步至雲端
+            this.syncToCloud();
         }
     }
 
