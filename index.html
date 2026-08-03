@@ -274,6 +274,82 @@
                     </div>
                 </div>
             </div>
+
+            <!-- 🤖 5分鐘網頁端自動交易系統卡片 -->
+            <div class="card auto-trading-card" style="margin-bottom: 20px; border: 1px solid rgba(0, 198, 255, 0.3); background: rgba(10, 25, 47, 0.65);">
+                <div id="auto-trading-header-btn" class="auto-trading-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                    <h2 style="font-size: 16px; font-weight: 600; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px;">
+                        🤖 5分鐘網頁端自動量化交易系統 (Auto-Trading Engine)
+                        <span id="auto-trading-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: rgba(255, 71, 87, 0.2); color: #ff4757; border: 1px solid rgba(255, 71, 87, 0.4);">狀態: 已關閉 (OFF)</span>
+                    </h2>
+                    <span id="auto-trading-arrow" style="font-size: 12px; color: var(--text-muted); transition: transform 0.3s;">▼</span>
+                </div>
+                
+                <div id="auto-trading-content" class="auto-trading-content hidden" style="margin-top: 15px;">
+                    <p class="config-tip" style="font-size: 12px; color: var(--text-muted); line-height: 1.5; text-align: left; margin: 0 0 15px 0;">
+                        當開啟此功能且保持網頁開啟時，系統將每 5 分鐘自動掃描市場。當分析出盈虧比 &gt; 1.0 的優質訊號時，會根據您的設定<strong>自動下單並帶入止盈止損 (TP/SL)</strong>。
+                    </p>
+
+                    <!-- 控制與模式開關區 -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 15px; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 8px; border: 1px solid var(--glass-border);">
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">自動交易總開關</label>
+                            <select id="auto-trading-switch" style="width: 100%; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px; font-weight: 600;">
+                                <option value="OFF">🔴 關閉自動交易 (OFF)</option>
+                                <option value="ON">🟢 開啟自動交易 (ON)</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">交易執行模式</label>
+                            <select id="auto-trading-mode" style="width: 100%; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: #00c6ff; outline: none; font-size: 12px; font-weight: 600;">
+                                <option value="PAPER">🟢 模擬盤零風險自動交易 (Paper Trading)</option>
+                                <option value="REAL">🔴 幣安實盤 API 自動交易 (Binance Real API)</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">自動下單槓桿倍數</label>
+                            <input type="number" id="auto-trading-leverage" placeholder="例如: 10" min="1" max="125" value="10" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">單筆下單風險比例 %</label>
+                            <input type="number" id="auto-trading-risk" placeholder="例如: 2" min="1" max="50" value="2" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                        </div>
+                    </div>
+
+                    <!-- 幣安 API 設定 (實盤選填) -->
+                    <div id="binance-api-credentials-group" style="margin-bottom: 15px; background: rgba(255,255,255,0.02); padding: 15px; border-radius: 8px; border: 1px solid var(--glass-border); display: none;">
+                        <label style="display: block; font-size: 12px; font-weight: 600; color: #f0b90b; margin-bottom: 10px;">
+                            🔑 幣安 API 憑證設定 (僅實盤交易需要)
+                        </label>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                            <div>
+                                <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">Binance API Key</label>
+                                <input type="password" id="binance-api-key" placeholder="貼上幣安 API Key..." style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">Binance API Secret</label>
+                                <input type="password" id="binance-api-secret" placeholder="貼上幣安 Secret Key..." style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <button id="save-auto-trading-btn" class="primary-btn-sm" style="width: auto; padding: 8px 20px; background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%); border: none;">儲存自動交易設定</button>
+                        <button id="test-auto-trading-scan-btn" class="secondary-btn-sm" style="width: auto; padding: 8px 16px; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: white;">⚡ 立即手動測試 5m 掃描下單</button>
+                    </div>
+
+                    <!-- 終端科技感運行日誌視窗 -->
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                            <label style="font-size: 11px; color: var(--text-muted); font-weight: 600;">📜 實時自動交易運行日誌 (Execution Logs)</label>
+                            <span id="clear-auto-log-btn" style="font-size: 11px; color: var(--accent-color); cursor: pointer; text-decoration: underline;">清空日誌</span>
+                        </div>
+                        <div id="auto-trading-log-console" style="height: 140px; background: #080c14; border: 1px solid rgba(0, 198, 255, 0.2); border-radius: 6px; padding: 10px; font-family: 'Courier New', Consolas, monospace; font-size: 11px; color: #00ff66; overflow-y: auto; line-height: 1.5;">
+                            [系統通知] 自動交易控制台準備就緒。選擇模式並開啟自動交易即可自動跟單。
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="card scanner-dashboard">
                 <div class="scanner-header">
                     <div class="scanner-header-text">
@@ -696,7 +772,7 @@
     <!-- Firebase SDK (v8 Compatibility Mode) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="index.js?v=1785316000"></script>
+    <script src="index.js?v=1785317000"></script>
 </body>
 
 </html>

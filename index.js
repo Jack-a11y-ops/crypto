@@ -34,6 +34,9 @@ class SNRTracer {
         this.backtestLineSeries = null; // 回測資金折線圖
         this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
         this.customBlacklist = [];
+        this.pendingBlacklist = [];
+        this.autoTradingConfig = { enabled: false, mode: 'PAPER', leverage: 10, risk: 2, apiKey: '', apiSecret: '' };
+
         this.pendingBlacklist = []; // 使用者自訂排除掃描幣種黑名單
         this.paperBalance = 10000.0;
         this.priceUpdateTimer = null; // 背景自動更新價格定時器
@@ -505,6 +508,42 @@ class SNRTracer {
             blacklistHeaderBtn.addEventListener('click', () => this.toggleBlacklistConfig());
         }
 
+        // 自動交易卡片事件綁定
+        const autoTradingHeaderBtn = document.getElementById('auto-trading-header-btn');
+        if (autoTradingHeaderBtn) {
+            autoTradingHeaderBtn.addEventListener('click', () => this.toggleAutoTradingConfig());
+        }
+
+        const autoTradingModeSelect = document.getElementById('auto-trading-mode');
+        if (autoTradingModeSelect) {
+            autoTradingModeSelect.addEventListener('change', (e) => {
+                const apiGroup = document.getElementById('binance-api-credentials-group');
+                if (apiGroup) {
+                    apiGroup.style.display = e.target.value === 'REAL' ? 'block' : 'none';
+                }
+            });
+        }
+
+        const saveAutoTradingBtn = document.getElementById('save-auto-trading-btn');
+        if (saveAutoTradingBtn) {
+            saveAutoTradingBtn.addEventListener('click', () => this.saveAutoTradingConfig());
+        }
+
+        const testAutoTradingBtn = document.getElementById('test-auto-trading-scan-btn');
+        if (testAutoTradingBtn) {
+            testAutoTradingBtn.addEventListener('click', () => this.executeAutoTradingScan(true));
+        }
+
+        const clearAutoLogBtn = document.getElementById('clear-auto-log-btn');
+        if (clearAutoLogBtn) {
+            clearAutoLogBtn.addEventListener('click', () => {
+                const consoleEl = document.getElementById('auto-trading-log-console');
+                if (consoleEl) {
+                    consoleEl.innerHTML = `[${new Date().toLocaleTimeString()}] 日誌已清空。`;
+                }
+            });
+        }
+
         const saveStrategyConfigBtn = document.getElementById('save-strategy-config-btn');
         if (saveStrategyConfigBtn) {
             saveStrategyConfigBtn.addEventListener('click', () => {
@@ -926,6 +965,7 @@ class SNRTracer {
         this.initPaperAccount();
         this.initTelegramConfig();
         this.initBlacklistConfig();
+        this.initAutoTradingConfig();
         
         // 登入成功後，主動依據當前 active tab 做切換與初始化渲染 (確保首頁預設為歷史紀錄時能自動加載數據)
         const activeTab = document.querySelector('.tab-btn.active');
@@ -1655,6 +1695,11 @@ class SNRTracer {
             // 6. 更新 UI 列表
             radarCount.innerText = `${savedOpportunities.length} 標的`;
             radarStatus.innerText = '掃描完成';
+
+            // 若已開啟 5m 自動交易，連動觸發自動交易分析與開倉
+            if (this.autoTradingConfig && this.autoTradingConfig.enabled) {
+                this.executeAutoTradingScan(false);
+            }
             
             if (savedOpportunities.length === 0) {
                 radarList.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 40px; color: var(--text-muted);">目前無符合高盈虧比 (盈虧比 > 1) 的交易機會</td></tr>';
@@ -4554,6 +4599,7 @@ class SNRTracer {
 
         // 將 pendingBlacklist 合併至 customBlacklist 並清空 pendingBlacklist
         if (!this.customBlacklist) this.customBlacklist = [];
+
         if (this.pendingBlacklist && this.pendingBlacklist.length > 0) {
             this.pendingBlacklist.forEach(symbol => {
                 if (!this.customBlacklist.includes(symbol)) {
