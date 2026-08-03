@@ -4006,7 +4006,12 @@ class SNRTracer {
         if (!telegramToken || !telegramChatId) return;
 
         const cleanSymbol = record.symbol.replace('USDT', '');
-        const messageText = `🛡️【移動止損保本警報】\n\n您的 ${cleanSymbol} ${record.type} 交易已獲利達到 1R 空間！\n\n系統已自動將該持倉之止損位（SL）修改為您的進場價：$${this.formatPrice(record.entry)}。\n當前該筆交易已鎖定零風險保本！`;
+        const openTimeStr = new Date(record.id).toLocaleString();
+        const initialSl = record.initialSl !== undefined ? record.initialSl : record.sl;
+        const oneRSpace = Math.abs(record.entry - initialSl);
+        const target1RR = record.type === 'LONG' ? record.entry + oneRSpace : record.entry - oneRSpace;
+
+        const messageText = `🛡️【1:1 盈虧比 (1RR) 獲利達標警報】\n\n📌 幣種：${cleanSymbol} ${record.type} (${record.interval.toUpperCase()})\n⏰ 開倉時間：${openTimeStr}\n💵 開倉價：$${this.formatPrice(record.entry)}\n🎯 1RR 達標點：$${this.formatPrice(target1RR)}\n\n🎉 該筆交易從開倉時間算起，已成功觸及 1:1 盈虧比 (1RR)！\n💡 系統已自動將止損點修改為開倉保本價 ($${this.formatPrice(record.entry)})，確保該單鎖定零風險保本！`;
 
         try {
             const corsProxy = 'https://corsproxy.io/?';
