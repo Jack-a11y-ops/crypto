@@ -4530,6 +4530,87 @@ class SNRTracer {
         consoleEl.scrollTop = consoleEl.scrollHeight;
     }
 
+    async hmacSha256(secret, message) {
+        const encoder = new TextEncoder();
+        const keyData = encoder.encode(secret);
+        const msgData = encoder.encode(message);
+        const cryptoKey = await crypto.subtle.importKey(
+            'raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+        );
+        const signature = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
+        return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async sendBinanceFuturesOrder(symbol, side, marginUSD, leverage, entryPrice, tpPrice, slPrice) {
+        const { apiKey, apiSecret } = this.autoTradingConfig;
+        if (!apiKey || !apiSecret) {
+            this.appendAutoTradingLog(`❌ 幣安實盤下單失敗：未填寫 API Key 或 API Secret`, 'error');
+            return false;
+        }
+
+        try {
+            const cleanSymbol = symbol.replace('USDT', '');
+            const positionValue = marginUSD * leverage;
+            let qty = positionValue / entryPrice;
+
+            // 精度調整
+            if (entryPrice > 1000) qty = parseFloat(qty.toFixed(3));
+            else if (entryPrice > 10) qty = parseFloat(qty.toFixed(2));
+            else if (entryPrice > 1) qty = parseFloat(qty.toFixed(1));
+            else qty = Math.round(qty);
+
+            if (qty <= 0) qty = 0.001;
+
+            const orderSide = side === 'LONG' ? 'BUY' : 'SELL';
+            const timestamp = Date.now();
+
+            // 1. 調整槓桿
+            const levQuery = `symbol=${symbol}&leverage=${leverage}&timestamp=${timestamp}`;
+            const levSig = await this.hmacSha256(apiSecret, levQuery);
+            try {
+                await fetch(`https://fapi.binance.com/fapi/v1/leverage?${levQuery}&signature=${levSig}`, {
+                    method: 'POST',
+                    headers: { 'X-MBX-APIKEY': apiKey }
+                });
+            } catch (e) {}
+
+            // 2. 提交市價單開倉
+            const orderQuery = `symbol=${symbol}&side=${orderSide}&type=MARKET&quantity=${qty}&timestamp=${timestamp}`;
+            const orderSig = await this.hmacSha256(apiSecret, orderQuery);
+            const orderUrl = `https://fapi.binance.com/fapi/v1/order?${orderQuery}&signature=${orderSig}`;
+
+            const res = await fetch(orderUrl, {
+                method: 'POST',
+                headers: { 'X-MBX-APIKEY': apiKey }
+            });
+
+            const resData = await res.json();
+
+            if (res.ok && resData.orderId) {
+                this.appendAutoTradingLog(
+                    `🎉 【幣安實盤下單成功！】${cleanSymbol} ${side} | 幣安訂單號: ${resData.orderId} | 下單數量: ${qty} | 槓桿: ${leverage}x | 本金保證金: $${marginUSD} USDT`,
+                    'trade'
+                );
+                this.showNotification(
+                    `🎉 幣安實盤自動下單成功`,
+                    `${cleanSymbol} ${side} 實盤訂單已提交至幣安！訂單號: ${resData.orderId}`
+                );
+                return true;
+            } else {
+                const errMsg = resData.msg || JSON.stringify(resData);
+                this.appendAutoTradingLog(
+                    `❌ 【幣安 API 回傳失敗】${cleanSymbol} 下單未成功：${errMsg}`,
+                    'error'
+                );
+                return false;
+            }
+        } catch (err) {
+            console.error('Binance Futures API Order Error:', err);
+            this.appendAutoTradingLog(`❌ 幣安 API 請求異常，請確認 API 權限或跨域設置。`, 'error');
+            return false;
+        }
+    }
+
     async executeAutoTradingScan(isManualTest = false) {
         if (!this.currentUser) return;
         if (!isManualTest && !this.autoTradingConfig.enabled) return;
@@ -4599,9 +4680,10 @@ class SNRTracer {
                     );
                 } else if (this.autoTradingConfig.mode === 'REAL') {
                     this.appendAutoTradingLog(
-                        `🔴 【幣安實盤 API 下單】連動歷史紀錄 ${cleanSymbol} ${record.type} | 原始保證金: $${marginUSD} USDT | 採用建議槓桿: ${actualLeverage}x | 入場: $${this.formatPrice(record.entry)}`,
+                        `🔴 【幣安實盤 API 提交中】連動歷史紀錄 ${cleanSymbol} ${record.type} | 保證金: $${marginUSD} USDT | 建議槓桿: ${actualLeverage}x | 入場: $${this.formatPrice(record.entry)}`,
                         'trade'
                     );
+                    await this.sendBinanceFuturesOrder(record.symbol, record.type, marginUSD, actualLeverage, record.entry, record.tp, record.sl);
                 }
             }
 
