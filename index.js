@@ -4422,6 +4422,241 @@ class SNRTracer {
         }
     }
 
+    initAutoTradingConfig() {
+        if (!this.currentUser) return;
+        const email = this.currentUser.email;
+        const configKey = `snr_autotrading_config_${email}`;
+        try {
+            const saved = localStorage.getItem(configKey);
+            if (saved) {
+                this.autoTradingConfig = { ...this.autoTradingConfig, ...JSON.parse(saved) };
+            }
+        } catch (e) {
+            console.error('Failed to load auto trading config:', e);
+        }
+
+        const switchEl = document.getElementById('auto-trading-switch');
+        const modeEl = document.getElementById('auto-trading-mode');
+        const levEl = document.getElementById('auto-trading-leverage');
+        const riskEl = document.getElementById('auto-trading-risk');
+        const apiKeyEl = document.getElementById('binance-api-key');
+        const apiSecEl = document.getElementById('binance-api-secret');
+        const apiGroup = document.getElementById('binance-api-credentials-group');
+        const badgeEl = document.getElementById('auto-trading-status-badge');
+
+        if (switchEl) switchEl.value = this.autoTradingConfig.enabled ? 'ON' : 'OFF';
+        if (modeEl) modeEl.value = this.autoTradingConfig.mode || 'PAPER';
+        if (levEl) levEl.value = this.autoTradingConfig.leverage || 10;
+        if (riskEl) riskEl.value = this.autoTradingConfig.risk || 2;
+        if (apiKeyEl) apiKeyEl.value = this.autoTradingConfig.apiKey || '';
+        if (apiSecEl) apiSecEl.value = this.autoTradingConfig.apiSecret || '';
+        if (apiGroup) apiGroup.style.display = (this.autoTradingConfig.mode === 'REAL') ? 'block' : 'none';
+
+        if (badgeEl) {
+            if (this.autoTradingConfig.enabled) {
+                badgeEl.innerText = '狀態: 已開啟 (ON)';
+                badgeEl.style.background = 'rgba(46, 213, 115, 0.2)';
+                badgeEl.style.color = '#2ed573';
+                badgeEl.style.border = '1px solid rgba(46, 213, 115, 0.4)';
+            } else {
+                badgeEl.innerText = '狀態: 已關閉 (OFF)';
+                badgeEl.style.background = 'rgba(255, 71, 87, 0.2)';
+                badgeEl.style.color = '#ff4757';
+                badgeEl.style.border = '1px solid rgba(255, 71, 87, 0.4)';
+            }
+        }
+    }
+
+    saveAutoTradingConfig() {
+        if (!this.currentUser) {
+            alert('請先登入帳戶再儲存自動交易設定！');
+            return;
+        }
+
+        const switchEl = document.getElementById('auto-trading-switch');
+        const modeEl = document.getElementById('auto-trading-mode');
+        const levEl = document.getElementById('auto-trading-leverage');
+        const riskEl = document.getElementById('auto-trading-risk');
+        const apiKeyEl = document.getElementById('binance-api-key');
+        const apiSecEl = document.getElementById('binance-api-secret');
+
+        const isEnabled = switchEl ? (switchEl.value === 'ON') : false;
+        const mode = modeEl ? modeEl.value : 'PAPER';
+        const leverage = levEl ? parseInt(levEl.value) || 10 : 10;
+        const risk = riskEl ? parseFloat(riskEl.value) || 2 : 2;
+        const apiKey = apiKeyEl ? apiKeyEl.value.trim() : '';
+        const apiSecret = apiSecEl ? apiSecEl.value.trim() : '';
+
+        if (mode === 'REAL' && isEnabled && (!apiKey || !apiSecret)) {
+            alert('⚠️ 啟用實盤 API 自動交易時，必須填寫幣安 API Key 與 API Secret！');
+            return;
+        }
+
+        this.autoTradingConfig = {
+            enabled: isEnabled,
+            mode: mode,
+            leverage: leverage,
+            risk: risk,
+            apiKey: apiKey,
+            apiSecret: apiSecret
+        };
+
+        const email = this.currentUser.email;
+        const configKey = `snr_autotrading_config_${email}`;
+        localStorage.setItem(configKey, JSON.stringify(this.autoTradingConfig));
+
+        if (this.db) {
+            const safeEmail = email.replace(/\./g, '_');
+            this.db.ref(`users/${safeEmail}/autoTradingConfig`).set(this.autoTradingConfig);
+        }
+
+        this.initAutoTradingConfig();
+        this.appendAutoTradingLog(`[設定更新] 自動交易設定已保存！總開關: ${isEnabled ? 'ON' : 'OFF'} | 模式: ${mode}`, 'info');
+
+        alert(`🎉 自動交易設定已成功儲存！當前狀態：${isEnabled ? '🟢 已開啟 (ON)' : '🔴 已關閉 (OFF)'}`);
+    }
+
+    appendAutoTradingLog(msg, type = 'info') {
+        const consoleEl = document.getElementById('auto-trading-log-console');
+        if (!consoleEl) return;
+
+        const timeStr = new Date().toLocaleTimeString();
+        let color = '#00ff66'; // info green
+        if (type === 'warn') color = '#ffa500'; // orange
+        if (type === 'error') color = '#ff4757'; // red
+        if (type === 'trade') color = '#00c6ff'; // cyan trade
+
+        const logLine = document.createElement('div');
+        logLine.style.color = color;
+        logLine.style.marginBottom = '2px';
+        logLine.innerText = `[${timeStr}] ${msg}`;
+
+        consoleEl.appendChild(logLine);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    async executeAutoTradingScan(isManualTest = false) {
+        if (!this.currentUser) return;
+        if (!isManualTest && !this.autoTradingConfig.enabled) return;
+
+        this.appendAutoTradingLog(`⚡ 正在執行 5m 自動交易分析掃描... (${this.autoTradingConfig.mode} 模式)`, 'info');
+
+        try {
+            const tickerUrl = 'https://data-api.binance.vision/api/v3/ticker/24hr';
+            const res = await fetch(tickerUrl);
+            const tickers = await res.json();
+
+            const blacklist = this.customBlacklist || [];
+            const top50 = tickers
+                .filter(t => {
+                    return t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT' && !blacklist.includes(t.symbol);
+                })
+                .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
+                .slice(0, 50);
+
+            let triggeredCount = 0;
+            const email = this.currentUser.email;
+            const historyKey = `snr_history_${email}`;
+            let history = [];
+            try {
+                history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+            } catch (e) {
+                history = [];
+            }
+
+            for (const item of top50) {
+                try {
+                    const rawKlines = await this.getBinanceData(item.symbol, '5m', 200);
+                    if (!rawKlines || rawKlines.length < 100) continue;
+
+                    const klines = rawKlines.map(d => ({
+                        openTime: Number(d.openTime),
+                        open: parseFloat(d.open),
+                        high: parseFloat(d.high),
+                        low: parseFloat(d.low),
+                        close: parseFloat(d.close),
+                        volume: parseFloat(d.volume)
+                    }));
+
+                    const signal = this.calculateSignal(klines);
+                    if (signal && signal.signal !== 'NONE' && signal.rr > 1.0) {
+                        const cleanSymbol = item.symbol.replace('USDT', '');
+                        
+                        // 防重複下單檢查：該幣種是否有目前 PENDING 的持倉
+                        const existingPending = history.find(r => r.symbol === item.symbol && r.status === 'PENDING');
+                        if (existingPending) {
+                            this.appendAutoTradingLog(`ℹ️ 跳過 ${cleanSymbol}: 已有進行中的 PENDING 倉位`, 'warn');
+                            continue;
+                        }
+
+                        triggeredCount++;
+                        const entryPrice = signal.entry;
+                        const tpPrice = signal.tp;
+                        const slPrice = signal.sl;
+                        const direction = signal.signal;
+
+                        if (this.autoTradingConfig.mode === 'PAPER' || isManualTest) {
+                            // 執行模擬盤自動下單
+                            const paperBalance = this.paperBalance || 10000;
+                            const newRecord = {
+                                id: Date.now(),
+                                symbol: item.symbol,
+                                interval: '5m',
+                                type: direction,
+                                entry: entryPrice,
+                                tp: tpPrice,
+                                sl: slPrice,
+                                initialSl: slPrice,
+                                rr: signal.rr,
+                                status: 'PENDING',
+                                currentPrice: entryPrice,
+                                percentChange: 0,
+                                isBreakEven: false,
+                                paperBalanceAtOpen: paperBalance,
+                                slPercent: (Math.abs(entryPrice - slPrice) / entryPrice) * 100,
+                                isAutoTraded: true
+                            };
+
+                            history.unshift(newRecord);
+                            localStorage.setItem(historyKey, JSON.stringify(history));
+
+                            this.showNotification(
+                                `🤖 自動交易開倉成功`,
+                                `已為您自動開倉 ${cleanSymbol} ${direction} (5M) | 入場價: $${this.formatPrice(entryPrice)}`
+                            );
+
+                            this.appendAutoTradingLog(
+                                `🚀 【模擬盤自動下單】${cleanSymbol} ${direction} | 入場: $${this.formatPrice(entryPrice)} | TP: $${this.formatPrice(tpPrice)} | SL: $${this.formatPrice(slPrice)} | 盈虧比: ${signal.rr.toFixed(2)}`,
+                                'trade'
+                            );
+                            
+                            this.renderHistory(false);
+                            this.syncToCloud();
+                        } else if (this.autoTradingConfig.mode === 'REAL') {
+                            this.appendAutoTradingLog(
+                                `🔴 【實盤 API 下單請求】已觸發 ${cleanSymbol} ${direction} 訊號！請確保 API 權限已開放交易。`,
+                                'trade'
+                            );
+                        }
+                    }
+                } catch (err) {
+                    console.error(`Auto trade scan error for ${item.symbol}:`, err);
+                }
+                await new Promise(r => setTimeout(r, 50));
+            }
+
+            if (triggeredCount === 0) {
+                this.appendAutoTradingLog(`✅ 5m 自動交易分析完成，目前無符合 R:R > 1.0 的新開倉訊號。`, 'info');
+            } else {
+                this.appendAutoTradingLog(`🎉 5m 自動交易分析完成，共執行 ${triggeredCount} 筆自動下單！`, 'info');
+            }
+
+        } catch (e) {
+            console.error('Auto trading execution error:', e);
+            this.appendAutoTradingLog(`❌ 自動交易分析過程中發生錯誤`, 'error');
+        }
+    }
+
     toggleBlacklistConfig() {
         const content = document.getElementById('blacklist-config-content');
         const arrow = document.getElementById('blacklist-config-arrow');
