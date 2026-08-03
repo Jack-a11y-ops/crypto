@@ -2159,10 +2159,8 @@ class SNRTracer {
                     const cloudData = snapshot.val();
                     let cloudHistory = cloudData.history || [];
                 if (cloudData.blacklistedSymbols && Array.isArray(cloudData.blacklistedSymbols)) {
-                    // 若本地無資料時從雲端同步，否則優先保留本地最新黑名單
-                    if (!this.customBlacklist || this.customBlacklist.length === 0) {
-                        this.customBlacklist = cloudData.blacklistedSymbols;
-                    }
+                    this.customBlacklist = cloudData.blacklistedSymbols;
+                    localStorage.setItem(`snr_blacklist_config_${email}`, JSON.stringify(cloudData.blacklistedSymbols));
                     this.renderCustomBlacklistTags();
                 }
                     
@@ -4112,10 +4110,8 @@ class SNRTracer {
                 const cloudData = snapshot.val();
                 cloudHistory = cloudData.history || [];
                 if (cloudData.blacklistedSymbols && Array.isArray(cloudData.blacklistedSymbols)) {
-                    // 若本地無資料時從雲端同步，否則優先保留本地最新黑名單
-                    if (!this.customBlacklist || this.customBlacklist.length === 0) {
-                        this.customBlacklist = cloudData.blacklistedSymbols;
-                    }
+                    this.customBlacklist = cloudData.blacklistedSymbols;
+                    localStorage.setItem(`snr_blacklist_config_${email}`, JSON.stringify(cloudData.blacklistedSymbols));
                     this.renderCustomBlacklistTags();
                 }
                 if (cloudData.paperBalance !== undefined) {
@@ -4427,11 +4423,14 @@ class SNRTracer {
         }
     }
 
-    initBlacklistConfig() {
+    async initBlacklistConfig() {
         this.pendingBlacklist = [];
         if (!this.currentUser) return;
+
         const email = this.currentUser.email;
         const configKey = `snr_blacklist_config_${email}`;
+
+        // 1. 先從本地快取載入
         try {
             const saved = localStorage.getItem(configKey);
             if (saved) {
@@ -4441,6 +4440,27 @@ class SNRTracer {
             this.customBlacklist = [];
         }
         this.renderCustomBlacklistTags();
+
+        // 2. 向 Firebase 雲端載入最新黑名單，並開啟跨裝置實時雙向同步 (.on('value'))
+        if (this.db) {
+            try {
+                const safeEmail = email.replace(/\./g, '_');
+                const dbRef = this.db.ref(`users/${safeEmail}/blacklistedSymbols`);
+                
+                dbRef.on('value', (snapshot) => {
+                    if (snapshot.exists()) {
+                        const cloudList = snapshot.val();
+                        if (Array.isArray(cloudList)) {
+                            this.customBlacklist = cloudList;
+                            localStorage.setItem(configKey, JSON.stringify(cloudList));
+                            this.renderCustomBlacklistTags();
+                        }
+                    }
+                });
+            } catch (err) {
+                console.error('Firebase realtime blacklist sync error:', err);
+            }
+        }
     }
 
     renderCustomBlacklistTags() {
@@ -4571,9 +4591,7 @@ class SNRTracer {
             localStorage.setItem(configKey, JSON.stringify(this.customBlacklist));
             if (this.db) {
                 const safeEmail = email.replace(/\./g, '_');
-                this.db.ref('users/' + safeEmail).update({
-                    blacklistedSymbols: this.customBlacklist || []
-                });
+                this.db.ref('users/' + safeEmail + '/blacklistedSymbols').set(this.customBlacklist || []);
             }
         }
         this.renderCustomBlacklistTags();
@@ -4617,9 +4635,7 @@ class SNRTracer {
 
         if (this.db) {
             const safeEmail = email.replace(/\./g, '_');
-            this.db.ref('users/' + safeEmail).update({
-                blacklistedSymbols: this.customBlacklist || []
-            });
+            this.db.ref('users/' + safeEmail + '/blacklistedSymbols').set(this.customBlacklist || []);
         }
 
         alert('🎉 黑名單已成功上傳並同步至 Firebase 雲端！上傳的幣種已移入「系統預設與雲端已去除幣種」中！');
