@@ -4408,6 +4408,20 @@ class SNRTracer {
     }
 
 
+    toggleAutoTradingConfig() {
+        const content = document.getElementById('auto-trading-content');
+        const arrow = document.getElementById('auto-trading-arrow');
+        if (content && arrow) {
+            content.classList.toggle('hidden');
+            if (content.classList.contains('hidden')) {
+                arrow.style.transform = 'rotate(0deg)';
+            } else {
+                arrow.style.transform = 'rotate(180deg)';
+                setTimeout(() => content.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+            }
+        }
+    }
+
     toggleBlacklistConfig() {
         const content = document.getElementById('blacklist-config-content');
         const arrow = document.getElementById('blacklist-config-arrow');
