@@ -4437,8 +4437,7 @@ class SNRTracer {
 
         const switchEl = document.getElementById('auto-trading-switch');
         const modeEl = document.getElementById('auto-trading-mode');
-        const levEl = document.getElementById('auto-trading-leverage');
-        const riskEl = document.getElementById('auto-trading-risk');
+        const marginEl = document.getElementById('auto-trading-margin');
         const apiKeyEl = document.getElementById('binance-api-key');
         const apiSecEl = document.getElementById('binance-api-secret');
         const apiGroup = document.getElementById('binance-api-credentials-group');
@@ -4446,8 +4445,7 @@ class SNRTracer {
 
         if (switchEl) switchEl.value = this.autoTradingConfig.enabled ? 'ON' : 'OFF';
         if (modeEl) modeEl.value = this.autoTradingConfig.mode || 'PAPER';
-        if (levEl) levEl.value = this.autoTradingConfig.leverage || 10;
-        if (riskEl) riskEl.value = this.autoTradingConfig.risk || 2;
+        if (marginEl) marginEl.value = this.autoTradingConfig.marginUSD || 100;
         if (apiKeyEl) apiKeyEl.value = this.autoTradingConfig.apiKey || '';
         if (apiSecEl) apiSecEl.value = this.autoTradingConfig.apiSecret || '';
         if (apiGroup) apiGroup.style.display = (this.autoTradingConfig.mode === 'REAL') ? 'block' : 'none';
@@ -4475,15 +4473,13 @@ class SNRTracer {
 
         const switchEl = document.getElementById('auto-trading-switch');
         const modeEl = document.getElementById('auto-trading-mode');
-        const levEl = document.getElementById('auto-trading-leverage');
-        const riskEl = document.getElementById('auto-trading-risk');
+        const marginEl = document.getElementById('auto-trading-margin');
         const apiKeyEl = document.getElementById('binance-api-key');
         const apiSecEl = document.getElementById('binance-api-secret');
 
         const isEnabled = switchEl ? (switchEl.value === 'ON') : false;
         const mode = modeEl ? modeEl.value : 'PAPER';
-        const leverage = levEl ? parseInt(levEl.value) || 10 : 10;
-        const risk = riskEl ? parseFloat(riskEl.value) || 2 : 2;
+        const marginUSD = marginEl ? parseFloat(marginEl.value) || 100 : 100;
         const apiKey = apiKeyEl ? apiKeyEl.value.trim() : '';
         const apiSecret = apiSecEl ? apiSecEl.value.trim() : '';
 
@@ -4495,8 +4491,7 @@ class SNRTracer {
         this.autoTradingConfig = {
             enabled: isEnabled,
             mode: mode,
-            leverage: leverage,
-            risk: risk,
+            marginUSD: marginUSD,
             apiKey: apiKey,
             apiSecret: apiSecret
         };
@@ -4511,9 +4506,9 @@ class SNRTracer {
         }
 
         this.initAutoTradingConfig();
-        this.appendAutoTradingLog(`[設定更新] 自動交易設定已保存！總開關: ${isEnabled ? 'ON' : 'OFF'} | 模式: ${mode}`, 'info');
+        this.appendAutoTradingLog(`[設定更新] 自動交易設定已保存！總開關: ${isEnabled ? 'ON' : 'OFF'} | 模式: ${mode} | 每單原始保證金: $${marginUSD} USDT`, 'info');
 
-        alert(`🎉 自動交易設定已成功儲存！當前狀態：${isEnabled ? '🟢 已開啟 (ON)' : '🔴 已關閉 (OFF)'}`);
+        alert(`🎉 自動交易設定已成功儲存！當前狀態：${isEnabled ? '🟢 已開啟 (ON)' : '🔴 已關閉 (OFF)'}，每單保證金: $${marginUSD} USDT`);
     }
 
     appendAutoTradingLog(msg, type = 'info') {
@@ -4539,22 +4534,10 @@ class SNRTracer {
         if (!this.currentUser) return;
         if (!isManualTest && !this.autoTradingConfig.enabled) return;
 
-        this.appendAutoTradingLog(`⚡ 正在執行 5m 自動交易分析掃描... (${this.autoTradingConfig.mode} 模式)`, 'info');
+        const marginUSD = this.autoTradingConfig.marginUSD || 100;
+        this.appendAutoTradingLog(`⚡ 正在掃描「歷史分析紀錄」依據即時訊號進行自動下單... (模式: ${this.autoTradingConfig.mode} | 單筆保證金: $${marginUSD} USDT)`, 'info');
 
         try {
-            const tickerUrl = 'https://data-api.binance.vision/api/v3/ticker/24hr';
-            const res = await fetch(tickerUrl);
-            const tickers = await res.json();
-
-            const blacklist = this.customBlacklist || [];
-            const top50 = tickers
-                .filter(t => {
-                    return t.symbol.endsWith('USDT') && !t.symbol.startsWith('RLUSD') && !t.symbol.startsWith('FDUSD') && t.symbol !== 'UUSDT' && t.symbol !== 'TRXUSDT' && !blacklist.includes(t.symbol);
-                })
-                .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
-                .slice(0, 50);
-
-            let triggeredCount = 0;
             const email = this.currentUser.email;
             const historyKey = `snr_history_${email}`;
             let history = [];
@@ -4564,96 +4547,75 @@ class SNRTracer {
                 history = [];
             }
 
-            for (const item of top50) {
+            // 1. 若為手動點擊測試，先進行一次 5m 全市場熱門標的訊號產生
+            if (isManualTest) {
+                await this.scanMarket();
                 try {
-                    const rawKlines = await this.getBinanceData(item.symbol, '5m', 200);
-                    if (!rawKlines || rawKlines.length < 100) continue;
-
-                    const klines = rawKlines.map(d => ({
-                        openTime: Number(d.openTime),
-                        open: parseFloat(d.open),
-                        high: parseFloat(d.high),
-                        low: parseFloat(d.low),
-                        close: parseFloat(d.close),
-                        volume: parseFloat(d.volume)
-                    }));
-
-                    const signal = this.calculateSignal(klines);
-                    if (signal && signal.signal !== 'NONE' && signal.rr > 1.0) {
-                        const cleanSymbol = item.symbol.replace('USDT', '');
-                        
-                        // 防重複下單檢查：該幣種是否有目前 PENDING 的持倉
-                        const existingPending = history.find(r => r.symbol === item.symbol && r.status === 'PENDING');
-                        if (existingPending) {
-                            this.appendAutoTradingLog(`ℹ️ 跳過 ${cleanSymbol}: 已有進行中的 PENDING 倉位`, 'warn');
-                            continue;
-                        }
-
-                        triggeredCount++;
-                        const entryPrice = signal.entry;
-                        const tpPrice = signal.tp;
-                        const slPrice = signal.sl;
-                        const direction = signal.signal;
-
-                        if (this.autoTradingConfig.mode === 'PAPER' || isManualTest) {
-                            // 執行模擬盤自動下單
-                            const paperBalance = this.paperBalance || 10000;
-                            const newRecord = {
-                                id: Date.now(),
-                                symbol: item.symbol,
-                                interval: '5m',
-                                type: direction,
-                                entry: entryPrice,
-                                tp: tpPrice,
-                                sl: slPrice,
-                                initialSl: slPrice,
-                                rr: signal.rr,
-                                status: 'PENDING',
-                                currentPrice: entryPrice,
-                                percentChange: 0,
-                                isBreakEven: false,
-                                paperBalanceAtOpen: paperBalance,
-                                slPercent: (Math.abs(entryPrice - slPrice) / entryPrice) * 100,
-                                isAutoTraded: true
-                            };
-
-                            history.unshift(newRecord);
-                            localStorage.setItem(historyKey, JSON.stringify(history));
-
-                            this.showNotification(
-                                `🤖 自動交易開倉成功`,
-                                `已為您自動開倉 ${cleanSymbol} ${direction} (5M) | 入場價: $${this.formatPrice(entryPrice)}`
-                            );
-
-                            this.appendAutoTradingLog(
-                                `🚀 【模擬盤自動下單】${cleanSymbol} ${direction} | 入場: $${this.formatPrice(entryPrice)} | TP: $${this.formatPrice(tpPrice)} | SL: $${this.formatPrice(slPrice)} | 盈虧比: ${signal.rr.toFixed(2)}`,
-                                'trade'
-                            );
-                            
-                            this.renderHistory(false);
-                            this.syncToCloud();
-                        } else if (this.autoTradingConfig.mode === 'REAL') {
-                            this.appendAutoTradingLog(
-                                `🔴 【實盤 API 下單請求】已觸發 ${cleanSymbol} ${direction} 訊號！請確保 API 權限已開放交易。`,
-                                'trade'
-                            );
-                        }
-                    }
-                } catch (err) {
-                    console.error(`Auto trade scan error for ${item.symbol}:`, err);
-                }
-                await new Promise(r => setTimeout(r, 50));
+                    history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+                } catch (e) {}
             }
 
-            if (triggeredCount === 0) {
-                this.appendAutoTradingLog(`✅ 5m 自動交易分析完成，目前無符合 R:R > 1.0 的新開倉訊號。`, 'info');
-            } else {
-                this.appendAutoTradingLog(`🎉 5m 自動交易分析完成，共執行 ${triggeredCount} 筆自動下單！`, 'info');
+            // 2. 獲取「歷史分析紀錄」中狀態為 PENDING 且尚未執行過自動交易 (isAutoExecuted) 的項目
+            const pendingToTrade = history.filter(r => r.status === 'PENDING' && !r.isAutoExecuted);
+            const blacklist = this.customBlacklist || [];
+
+            if (pendingToTrade.length === 0) {
+                this.appendAutoTradingLog(`✅ 歷史分析紀錄無新產生的未開倉訊號。`, 'info');
+                return;
+            }
+
+            let executedCount = 0;
+            for (const record of pendingToTrade) {
+                const cleanSymbol = record.symbol.replace('USDT', '');
+                
+                // 跳過黑名單幣種
+                if (blacklist.includes(record.symbol)) {
+                    this.appendAutoTradingLog(`🚫 跳過 ${cleanSymbol}: 位於排除黑名單中`, 'warn');
+                    record.isAutoExecuted = true;
+                    continue;
+                }
+
+                // 讀取該筆歷史分析紀錄中的「建議槓桿 (Leverage)」
+                const suggestedLeverage = record.leverage || (this.strategyConfig ? (100 / (this.strategyConfig.riskRatio || 10)) : 10);
+                const actualLeverage = Math.min(Math.max(Math.round(suggestedLeverage), 1), 125);
+                const positionValueUSD = marginUSD * actualLeverage;
+
+                record.isAutoExecuted = true;
+                executedCount++;
+
+                if (this.autoTradingConfig.mode === 'PAPER' || isManualTest) {
+                    record.autoTradedMargin = marginUSD;
+                    record.autoTradedLeverage = actualLeverage;
+                    record.autoTradedPositionValue = positionValueUSD;
+
+                    this.showNotification(
+                        `🤖 [歷史紀錄連動] 自動交易開倉`,
+                        `${cleanSymbol} ${record.type} (5M) | 原始保證金: $${marginUSD} USDT | 建議槓桿: ${actualLeverage}x (總持倉: $${positionValueUSD.toFixed(1)} USDT)`
+                    );
+
+                    this.appendAutoTradingLog(
+                        `🚀 【模擬盤自動下單】連動歷史紀錄 ${cleanSymbol} ${record.type} | 原始保證金: $${marginUSD} USDT | 採用建議槓桿: ${actualLeverage}x (持倉價值: $${positionValueUSD.toFixed(1)} USDT) | 入場: $${this.formatPrice(record.entry)} | TP: $${this.formatPrice(record.tp)} | SL: $${this.formatPrice(record.sl)}`,
+                        'trade'
+                    );
+                } else if (this.autoTradingConfig.mode === 'REAL') {
+                    this.appendAutoTradingLog(
+                        `🔴 【幣安實盤 API 下單】連動歷史紀錄 ${cleanSymbol} ${record.type} | 原始保證金: $${marginUSD} USDT | 採用建議槓桿: ${actualLeverage}x | 入場: $${this.formatPrice(record.entry)}`,
+                        'trade'
+                    );
+                }
+            }
+
+            localStorage.setItem(historyKey, JSON.stringify(history));
+            this.renderHistory(false);
+            this.syncToCloud();
+
+            if (executedCount > 0) {
+                this.appendAutoTradingLog(`🎉 已依據歷史分析紀錄成功執行 ${executedCount} 筆自動下單！`, 'info');
             }
 
         } catch (e) {
-            console.error('Auto trading execution error:', e);
-            this.appendAutoTradingLog(`❌ 自動交易分析過程中發生錯誤`, 'error');
+            console.error('Execute auto trading by history error:', e);
+            this.appendAutoTradingLog(`❌ 依據歷史分析紀錄自動下單時發生錯誤`, 'error');
         }
     }
 
