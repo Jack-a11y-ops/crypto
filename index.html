@@ -220,8 +220,22 @@
                             <input type="number" id="strategy-fee-rate" placeholder="例如: 0.05" min="0.00" max="1.00" step="0.01" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
                         </div>
                         <div class="input-group">
-                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">預期滑價比例 % (預設 0.02)</label>
-                            <input type="number" id="strategy-slippage" placeholder="例如: 0.02" min="0.00" max="2.00" step="0.01" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
+                            <label style="display: block; font-size: 11px; color: #00c6ff; font-weight: 600; margin-bottom: 5px;">🌊 1H 大週期趨勢順勢過濾 (勝率提升)</label>
+                            <select id="strategy-mtf-filter" style="width: 100%; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: #00c6ff; font-weight: 600; outline: none; font-size: 12px;">
+                                <option value="ON">🟢 開啟 (只做與 1H EMA 趨勢同向交易)</option>
+                                <option value="OFF">🔴 關閉 (放行所有訊號)</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: #2ed573; font-weight: 600; margin-bottom: 5px;">📊 5M 成交量爆量確認 (過濾無量假突破)</label>
+                            <select id="strategy-volume-filter" style="width: 100%; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: #2ed573; font-weight: 600; outline: none; font-size: 12px;">
+                                <option value="ON">🟢 開啟 (成交量需高於均量)</option>
+                                <option value="OFF">🔴 關閉 (不限制成交量)</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">成交量爆量倍數 (預設 1.2x)</label>
+                            <input type="number" id="strategy-volume-multiplier" placeholder="例如: 1.2" min="1.0" max="5.0" step="0.1" value="1.2" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
                         </div>
                     </div>
                     <div style="margin-top: 15px;">
@@ -774,7 +788,7 @@
     <!-- Firebase SDK (v8 Compatibility Mode) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="index.js?v=1785323000"></script>
+    <script src="index.js?v=1785324000"></script>
 </body>
 
 </html>

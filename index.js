@@ -32,7 +32,7 @@ class SNRTracer {
         this.isDraggingSL = false; // 是否正在拖曳 SL 線
         this.backtestChart = null; // 回測資金曲線圖表
         this.backtestLineSeries = null; // 回測資金折線圖
-        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
+        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02, mtfFilter: 'ON', volumeFilter: 'ON', volumeMultiplier: 1.2 };
         this.customBlacklist = [];
         this.pendingBlacklist = [];
         this.autoTradingConfig = { enabled: false, mode: 'PAPER', leverage: 10, risk: 2, apiKey: '', apiSecret: '' };
@@ -1230,7 +1230,7 @@ class SNRTracer {
     }
 
     // 核心 SNR 運算邏輯 (整合 EMA 趨勢、ATR 波動度、RSI與MACD多指標共振)
-    analyzeSNR(data, config = null) {
+    analyzeSNR(data, config = null, klines1h = null) {
         const activeConfig = config || this.strategyConfig || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
         const emaPeriod = activeConfig.emaPeriod || 50;
         const atrMultiplier = activeConfig.atrMultiplier || 1.5;
@@ -1355,6 +1355,38 @@ class SNRTracer {
             rr = 0;
             sl = 0;
             tp = 0;
+        }
+
+        // === 勝率過濾器 1: 5M 成交量爆量過濾器 (Volume Spike Filter) ===
+        if (signal !== 'WATCH' && activeConfig.volumeFilter === 'ON') {
+            const volMult = activeConfig.volumeMultiplier || 1.2;
+            const past20Vols = data.slice(-21, -1).map(k => k.volume);
+            if (past20Vols.length > 0) {
+                const avgVol20 = past20Vols.reduce((a, b) => a + b, 0) / past20Vols.length;
+                const lastVol = data[data.length - 1].volume;
+                if (lastVol < avgVol20 * volMult) {
+                    signal = 'WATCH';
+                    rr = 0;
+                    sl = 0;
+                    tp = 0;
+                }
+            }
+        }
+
+        // === 勝率過濾器 2: 1H 多週期趨勢順勢過濾器 (Multi-Timeframe Filter) ===
+        if (signal !== 'WATCH' && activeConfig.mtfFilter === 'ON' && klines1h && klines1h.length >= 50) {
+            const closes1h = klines1h.map(k => parseFloat(k.close));
+            const ema1h = this.calculateEMA(klines1h, 50);
+            const last1hClose = closes1h[closes1h.length - 1];
+            const last1hEMA = ema1h[ema1h.length - 1];
+            const trend1h = last1hClose > last1hEMA ? 'LONG' : 'SHORT';
+            
+            if (signal !== trend1h) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
         }
 
         // === 計算綜合勝率評估分數 (winRate) ===
@@ -1578,6 +1610,12 @@ class SNRTracer {
             for (const item of top50) {
                 try {
                     const data = await this.getBinanceData(item.symbol, this.interval);
+                    let data1h = null;
+                    if (this.strategyConfig && this.strategyConfig.mtfFilter === 'ON') {
+                        try {
+                            data1h = await this.getBinanceData(item.symbol, '1h', 100);
+                        } catch (e) {}
+                    }
                     if (data.length < 100) continue;
 
                     const chartData = data.map(d => ({
