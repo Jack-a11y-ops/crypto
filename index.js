@@ -4994,68 +4994,59 @@ class SNRTracer {
 
     saveStrategyConfig() {
         if (!this.currentUser) {
-            alert('請先登入帳戶再儲存設定');
+            alert('請先登入帳戶再儲存設定！');
             return;
         }
 
-        const emaPeriodVal = document.getElementById('strategy-ema-period').value.trim();
-        const atrMultiplierVal = document.getElementById('strategy-atr-multiplier').value.trim();
-        const riskRatioVal = document.getElementById('strategy-risk-ratio').value.trim();
-        const feeRateVal = document.getElementById('strategy-fee-rate').value.trim();
-        const slippageVal = document.getElementById('strategy-slippage').value.trim();
+        const emaEl = document.getElementById('strategy-ema-period');
+        const atrEl = document.getElementById('strategy-atr-multiplier');
+        const riskEl = document.getElementById('strategy-risk-ratio');
+        const feeEl = document.getElementById('strategy-fee-rate');
+        const slipEl = document.getElementById('strategy-slippage');
+        const mtfEl = document.getElementById('strategy-mtf-filter');
+        const volFEl = document.getElementById('strategy-volume-filter');
+        const volMEl = document.getElementById('strategy-volume-multiplier');
 
-        const emaPeriod = parseInt(emaPeriodVal);
-        const atrMultiplier = parseFloat(atrMultiplierVal);
-        const riskRatio = parseInt(riskRatioVal);
-        const feeRate = parseFloat(feeRateVal);
-        const slippage = parseFloat(slippageVal);
+        const emaPeriod = (emaEl && emaEl.value.trim()) ? parseInt(emaEl.value) : 50;
+        const atrMultiplier = (atrEl && atrEl.value.trim()) ? parseFloat(atrEl.value) : 1.5;
+        const riskRatio = (riskEl && riskEl.value.trim()) ? parseInt(riskEl.value) : 30;
+        const feeRate = (feeEl && feeEl.value.trim()) ? parseFloat(feeEl.value) : 0.05;
+        const slippage = (slipEl && slipEl.value.trim()) ? parseFloat(slipEl.value) : 0.02;
+        const mtfFilter = mtfEl ? mtfEl.value : 'ON';
+        const volumeFilter = volFEl ? volFEl.value : 'ON';
+        const volumeMultiplier = (volMEl && volMEl.value.trim()) ? parseFloat(volMEl.value) : 1.2;
 
         if (isNaN(emaPeriod) || emaPeriod < 5 || emaPeriod > 300) {
-            alert('EMA 週期必須是 5 到 300 之間的整數');
+            alert('EMA 週期必須介於 5 至 300 之間的整數！');
             return;
         }
         if (isNaN(atrMultiplier) || atrMultiplier < 0.1 || atrMultiplier > 10.0) {
-            alert('ATR 止損倍數必須是 0.1 到 10.0 之間的數值');
-            return;
-        }
-        if (isNaN(riskRatio) || riskRatio < 5 || riskRatio > 100) {
-            alert('預設風險比例必須是 5% 到 100% 之間的整數');
-            return;
-        }
-        if (isNaN(feeRate) || feeRate < 0.0 || feeRate > 1.0) {
-            alert('交易手續費率必須是 0% 到 1% 之間的數值');
-            return;
-        }
-        if (isNaN(slippage) || slippage < 0.0 || slippage > 2.0) {
-            alert('預期滑價比例必須是 0% 到 2% 之間的數值');
+            alert('ATR 止損倍數必須介於 0.1 至 10.0 之間的數值！');
             return;
         }
 
-        const email = this.currentUser.email;
-        const configKey = `snr_strategy_config_${email}`;
-        
         this.strategyConfig = {
             emaPeriod,
             atrMultiplier,
             riskRatio,
             feeRate,
-            slippage
+            slippage,
+            mtfFilter,
+            volumeFilter,
+            volumeMultiplier
         };
 
+        const email = this.currentUser.email;
+        const configKey = `snr_strategy_config_${email}`;
         localStorage.setItem(configKey, JSON.stringify(this.strategyConfig));
 
-        // 更新槓桿預期虧損輸入框的預設值
-        const lossRatioEl = document.getElementById('calc-loss-ratio');
-        if (lossRatioEl) {
-            lossRatioEl.value = riskRatio;
-            this.calculateLeverage();
+        if (this.db) {
+            const safeEmail = email.replace(/\./g, '_');
+            this.db.ref(`users/${safeEmail}/strategyConfig`).set(this.strategyConfig);
         }
 
-        alert('策略設定儲存成功！並已同步至雲端。');
-        this.syncToCloud();
-
-        // 重新執行分析以套用新參數
-        this.fetchAndAnalyze();
+        this.initStrategyConfig();
+        alert('🎉 策略參數與勝率優化設定已成功儲存並同步至 Firebase 雲端！');
     }
 
     toggleEmailConfig() {
