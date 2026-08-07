@@ -1910,9 +1910,9 @@ class SNRTracer {
 
         history.unshift(newRecord);
 
-        // 限制只保留最近 100 筆，超出部分刪除
-        if (history.length > 100) {
-            history = history.slice(0, 100);
+        // 限制只保留最近 500 筆，超出部分自動刪除舊紀錄
+        if (history.length > 500) {
+            history = history.slice(0, 500);
         }
 
         localStorage.setItem(historyKey, JSON.stringify(history));
