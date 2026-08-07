@@ -32,7 +32,7 @@ class SNRTracer {
         this.isDraggingSL = false; // 是否正在拖曳 SL 線
         this.backtestChart = null; // 回測資金曲線圖表
         this.backtestLineSeries = null; // 回測資金折線圖
-        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02, mtfFilter: 'ON', volumeFilter: 'ON', volumeMultiplier: 1.2, pinbarFilter: 'ON' };
+        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02, mtfFilter: 'ON', volumeFilter: 'ON', volumeMultiplier: 1.2, pinbarFilter: 'ON', rsiDivFilter: 'ON' };
         this.customBlacklist = [];
         this.pendingBlacklist = [];
         this.autoTradingConfig = { enabled: false, mode: 'PAPER', leverage: 10, risk: 2, apiKey: '', apiSecret: '' };
@@ -1230,6 +1230,50 @@ class SNRTracer {
     }
 
     // 核心 SNR 運算邏輯 (整合 EMA 趨勢、ATR 波動度、RSI與MACD多指標共振)
+    detectRSIDivergence(data) {
+        if (!data || data.length < 35) return { bullDivergence: false, bearDivergence: false };
+        const rsiArr = this.calculateRSI(data, 14);
+        const sliceLen = Math.min(data.length, 35);
+        const subData = data.slice(-sliceLen);
+        const subRSI = rsiArr.slice(-sliceLen);
+
+        let bullDivergence = false;
+        let bearDivergence = false;
+
+        const lastPrice = subData[subData.length - 1].close;
+        const lastRSI = subRSI[subRSI.length - 1];
+
+        // 1. 檢測底背離 (Bullish Divergence: 價格創新低，但 RSI 抬高)
+        let prevMinPrice = Infinity;
+        let prevMinRSI = Infinity;
+        for (let i = 0; i < subData.length - 5; i++) {
+            if (subData[i].low < prevMinPrice) {
+                prevMinPrice = subData[i].low;
+                prevMinRSI = subRSI[i];
+            }
+        }
+
+        if (lastPrice <= prevMinPrice * 1.005 && lastRSI > prevMinRSI + 3) {
+            bullDivergence = true;
+        }
+
+        // 2. 檢測頂背離 (Bearish Divergence: 價格創新高，但 RSI 降低)
+        let prevMaxPrice = -Infinity;
+        let prevMaxRSI = -Infinity;
+        for (let i = 0; i < subData.length - 5; i++) {
+            if (subData[i].high > prevMaxPrice) {
+                prevMaxPrice = subData[i].high;
+                prevMaxRSI = subRSI[i];
+            }
+        }
+
+        if (lastPrice >= prevMaxPrice * 0.995 && lastRSI < prevMaxRSI - 3) {
+            bearDivergence = true;
+        }
+
+        return { bullDivergence, bearDivergence };
+    }
+
     analyzeSNR(data, config = null, klines1h = null) {
         const activeConfig = config || this.strategyConfig || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
         const emaPeriod = activeConfig.emaPeriod || 50;
@@ -1423,6 +1467,22 @@ class SNRTracer {
             }
 
             if (!hasReversalPattern) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        }
+
+        // === 勝率過濾器 4: RSI 頂底背離二次確認 (RSI Divergence Filter) ===
+        if (signal !== 'WATCH' && activeConfig.rsiDivFilter === 'ON') {
+            const divRes = this.detectRSIDivergence(data);
+            if (signal === 'LONG' && !divRes.bullDivergence) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            } else if (signal === 'SHORT' && !divRes.bearDivergence) {
                 signal = 'WATCH';
                 rr = 0;
                 sl = 0;
@@ -5048,6 +5108,7 @@ class SNRTracer {
         const volFEl = document.getElementById('strategy-volume-filter');
         const volMEl = document.getElementById('strategy-volume-multiplier');
         const pinEl = document.getElementById('strategy-pinbar-filter');
+        const rsiDivEl = document.getElementById('strategy-rsi-div-filter');
 
         const emaPeriod = (emaEl && emaEl.value.trim()) ? parseInt(emaEl.value) : 50;
         const atrMultiplier = (atrEl && atrEl.value.trim()) ? parseFloat(atrEl.value) : 1.5;
@@ -5076,7 +5137,8 @@ class SNRTracer {
             mtfFilter,
             volumeFilter,
             volumeMultiplier,
-            pinbarFilter: pinEl ? pinEl.value : 'ON'
+            pinbarFilter: pinEl ? pinEl.value : 'ON',
+            rsiDivFilter: rsiDivEl ? rsiDivEl.value : 'ON'
         };
 
         const email = this.currentUser.email;
