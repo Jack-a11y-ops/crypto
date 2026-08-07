@@ -255,6 +255,13 @@
                                 <option value="OFF">🔴 關閉 (不限制 RSI 背離)</option>
                             </select>
                         </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: #ff6b6b; font-weight: 600; margin-bottom: 5px;">📊 幣安合約資金費率極端過濾 (Funding Rate Filter)</label>
+                            <select id="strategy-funding-filter" style="width: 100%; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: #ff6b6b; font-weight: 600; outline: none; font-size: 12px;">
+                                <option value="ON">🟢 開啟 (費率 > +0.05% 禁追多 / < -0.05% 禁追空)</option>
+                                <option value="OFF">🔴 關閉 (不限制資金費率)</option>
+                            </select>
+                        </div>
                     </div>
                     <div style="margin-top: 15px;">
                         <button id="save-strategy-config-btn" class="primary-btn-sm" style="width: auto; padding: 8px 20px;">儲存策略設定</button>
@@ -806,7 +813,7 @@
     <!-- Firebase SDK (v8 Compatibility Mode) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="index.js?v=1785328000"></script>
+    <script src="index.js?v=1785329000"></script>
 </body>
 
 </html>

@@ -32,7 +32,7 @@ class SNRTracer {
         this.isDraggingSL = false; // 是否正在拖曳 SL 線
         this.backtestChart = null; // 回測資金曲線圖表
         this.backtestLineSeries = null; // 回測資金折線圖
-        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02, mtfFilter: 'ON', volumeFilter: 'ON', volumeMultiplier: 1.2, pinbarFilter: 'ON', rsiDivFilter: 'ON' };
+        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02, mtfFilter: 'ON', volumeFilter: 'ON', volumeMultiplier: 1.2, pinbarFilter: 'ON', rsiDivFilter: 'ON', fundingFilter: 'ON' };
         this.customBlacklist = [];
         this.pendingBlacklist = [];
         this.autoTradingConfig = { enabled: false, mode: 'PAPER', leverage: 10, risk: 2, apiKey: '', apiSecret: '' };
@@ -1274,7 +1274,7 @@ class SNRTracer {
         return { bullDivergence, bearDivergence };
     }
 
-    analyzeSNR(data, config = null, klines1h = null) {
+    analyzeSNR(data, config = null, klines1h = null, fundingRate = null) {
         const activeConfig = config || this.strategyConfig || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
         const emaPeriod = activeConfig.emaPeriod || 50;
         const atrMultiplier = activeConfig.atrMultiplier || 1.5;
@@ -1483,6 +1483,24 @@ class SNRTracer {
                 sl = 0;
                 tp = 0;
             } else if (signal === 'SHORT' && !divRes.bearDivergence) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        }
+
+        // === 勝率過濾器 5: 幣安合約資金費率極端過濾器 (Funding Rate Filter) ===
+        if (signal !== 'WATCH' && activeConfig.fundingFilter === 'ON' && fundingRate !== null) {
+            // 資金費率 > +0.05% (+0.0005) 代表市場做多極度過熱，強烈禁止追多
+            if (signal === 'LONG' && fundingRate > 0.0005) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+            // 資金費率 < -0.05% (-0.0005) 代表市場做空極度恐慌，強烈禁止追空
+            else if (signal === 'SHORT' && fundingRate < -0.0005) {
                 signal = 'WATCH';
                 rr = 0;
                 sl = 0;
@@ -1723,7 +1741,16 @@ class SNRTracer {
                         close: parseFloat(d.close), high: parseFloat(d.high), low: parseFloat(d.low)
                     }));
 
-                    const analysis = this.analyzeSNR(chartData);
+                    let fundingRate = null;
+                    if (this.strategyConfig && this.strategyConfig.fundingFilter === 'ON') {
+                        try {
+                            const prem = await (await fetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=' + item.symbol)).json();
+                            if (prem && prem.lastFundingRate !== undefined) {
+                                fundingRate = parseFloat(prem.lastFundingRate);
+                            }
+                        } catch (e) {}
+                    }
+                    const analysis = this.analyzeSNR(chartData, null, data1h, fundingRate);
 
                     // 過濾：信號明確且盈虧比 > 1
                     if (analysis.signal !== 'WATCH' && analysis.rr > 1) {
@@ -5109,6 +5136,7 @@ class SNRTracer {
         const volMEl = document.getElementById('strategy-volume-multiplier');
         const pinEl = document.getElementById('strategy-pinbar-filter');
         const rsiDivEl = document.getElementById('strategy-rsi-div-filter');
+        const fundEl = document.getElementById('strategy-funding-filter');
 
         const emaPeriod = (emaEl && emaEl.value.trim()) ? parseInt(emaEl.value) : 50;
         const atrMultiplier = (atrEl && atrEl.value.trim()) ? parseFloat(atrEl.value) : 1.5;
@@ -5138,7 +5166,8 @@ class SNRTracer {
             volumeFilter,
             volumeMultiplier,
             pinbarFilter: pinEl ? pinEl.value : 'ON',
-            rsiDivFilter: rsiDivEl ? rsiDivEl.value : 'ON'
+            rsiDivFilter: rsiDivEl ? rsiDivEl.value : 'ON',
+            fundingFilter: fundEl ? fundEl.value : 'ON'
         };
 
         const email = this.currentUser.email;
