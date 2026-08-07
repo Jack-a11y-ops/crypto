@@ -32,7 +32,7 @@ class SNRTracer {
         this.isDraggingSL = false; // 是否正在拖曳 SL 線
         this.backtestChart = null; // 回測資金曲線圖表
         this.backtestLineSeries = null; // 回測資金折線圖
-        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02, mtfFilter: 'ON', volumeFilter: 'ON', volumeMultiplier: 1.2 };
+        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02, mtfFilter: 'ON', volumeFilter: 'ON', volumeMultiplier: 1.2, pinbarFilter: 'ON' };
         this.customBlacklist = [];
         this.pendingBlacklist = [];
         this.autoTradingConfig = { enabled: false, mode: 'PAPER', leverage: 10, risk: 2, apiKey: '', apiSecret: '' };
@@ -1382,6 +1382,47 @@ class SNRTracer {
             const trend1h = last1hClose > last1hEMA ? 'LONG' : 'SHORT';
             
             if (signal !== trend1h) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        }
+
+        // === 勝率過濾器 3: K 線反轉型態二次確認 (Pinbar / Bullish & Bearish Engulfing) ===
+        if (signal !== 'WATCH' && activeConfig.pinbarFilter === 'ON' && data.length >= 2) {
+            const lastCandle = data[data.length - 1];
+            const prevCandle = data[data.length - 2];
+
+            const o = lastCandle.open, h = lastCandle.high, l = lastCandle.low, c = lastCandle.close;
+            const range = h - l;
+            const body = Math.abs(c - o);
+            const lowerShadow = Math.min(o, c) - l;
+            const upperShadow = h - Math.max(o, c);
+
+            let hasReversalPattern = false;
+
+            if (signal === 'LONG') {
+                // 1. 長下影線 Pinbar (鎚頭線)
+                const isBullishPinbar = range > 0 && (lowerShadow >= range * 0.45) && (lowerShadow >= body * 1.5);
+                // 2. 看漲吞噬 (Bullish Engulfing)
+                const isBullishEngulfing = (prevCandle.close < prevCandle.open) && (c > o) && (c >= prevCandle.open) && (o <= prevCandle.close);
+                
+                if (isBullishPinbar || isBullishEngulfing) {
+                    hasReversalPattern = true;
+                }
+            } else if (signal === 'SHORT') {
+                // 1. 長上影線 Pinbar (倒鎚頭)
+                const isBearishPinbar = range > 0 && (upperShadow >= range * 0.45) && (upperShadow >= body * 1.5);
+                // 2. 看跌吞噬 (Bearish Engulfing)
+                const isBearishEngulfing = (prevCandle.close > prevCandle.open) && (c < o) && (c <= prevCandle.open) && (o >= prevCandle.close);
+                
+                if (isBearishPinbar || isBearishEngulfing) {
+                    hasReversalPattern = true;
+                }
+            }
+
+            if (!hasReversalPattern) {
                 signal = 'WATCH';
                 rr = 0;
                 sl = 0;
@@ -5006,6 +5047,7 @@ class SNRTracer {
         const mtfEl = document.getElementById('strategy-mtf-filter');
         const volFEl = document.getElementById('strategy-volume-filter');
         const volMEl = document.getElementById('strategy-volume-multiplier');
+        const pinEl = document.getElementById('strategy-pinbar-filter');
 
         const emaPeriod = (emaEl && emaEl.value.trim()) ? parseInt(emaEl.value) : 50;
         const atrMultiplier = (atrEl && atrEl.value.trim()) ? parseFloat(atrEl.value) : 1.5;
@@ -5033,7 +5075,8 @@ class SNRTracer {
             slippage,
             mtfFilter,
             volumeFilter,
-            volumeMultiplier
+            volumeMultiplier,
+            pinbarFilter: pinEl ? pinEl.value : 'ON'
         };
 
         const email = this.currentUser.email;

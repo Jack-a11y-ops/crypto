@@ -241,6 +241,13 @@
                             <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">成交量爆量倍數 (預設 1.2x)</label>
                             <input type="number" id="strategy-volume-multiplier" placeholder="例如: 1.2" min="1.0" max="5.0" step="0.1" value="1.2" style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: white; outline: none; font-size: 12px;">
                         </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: #ff9f43; font-weight: 600; margin-bottom: 5px;">🕯️ K線反轉型態二次確認 (Pinbar/吞噬型態)</label>
+                            <select id="strategy-pinbar-filter" style="width: 100%; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: #ff9f43; font-weight: 600; outline: none; font-size: 12px;">
+                                <option value="ON">🟢 開啟 (需出現 Pinbar 鎚頭線或吞噬型態)</option>
+                                <option value="OFF">🔴 關閉 (不限制反轉型態)</option>
+                            </select>
+                        </div>
                     </div>
                     <div style="margin-top: 15px;">
                         <button id="save-strategy-config-btn" class="primary-btn-sm" style="width: auto; padding: 8px 20px;">儲存策略設定</button>
@@ -792,7 +799,7 @@
     <!-- Firebase SDK (v8 Compatibility Mode) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="index.js?v=1785326000"></script>
+    <script src="index.js?v=1785327000"></script>
 </body>
 
 </html>
