@@ -32,7 +32,7 @@ class SNRTracer {
         this.isDraggingSL = false; // 是否正在拖曳 SL 線
         this.backtestChart = null; // 回測資金曲線圖表
         this.backtestLineSeries = null; // 回測資金折線圖
-        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02, mtfFilter: 'ON', volumeFilter: 'ON', volumeMultiplier: 1.2, pinbarFilter: 'ON', rsiDivFilter: 'ON', fundingFilter: 'ON' };
+        this.strategyConfig = { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02, mtfFilter: 'ON', volumeFilter: 'ON', volumeMultiplier: 1.2, pinbarFilter: 'ON', rsiDivFilter: 'ON', fundingFilter: 'ON', atr2Filter: 'ON' };
         this.customBlacklist = [];
         this.pendingBlacklist = [];
         this.autoTradingConfig = { enabled: false, mode: 'PAPER', leverage: 10, risk: 2, apiKey: '', apiSecret: '' };
@@ -1346,6 +1346,24 @@ class SNRTracer {
                 signal = 'SHORT';
                 sl = resistance.value + slBuffer;
                 tp = support.value;
+                rr = (lastPrice - tp) / (sl - lastPrice);
+            }
+        }
+
+        // === ATR 2.0 動態帶狀止損防護罩 (Chandelier Exit) ===
+        if (signal !== 'WATCH' && activeConfig.atr2Filter === 'ON' && data.length >= 5) {
+            const past5Lows = data.slice(-5).map(k => k.low);
+            const past5Highs = data.slice(-5).map(k => k.high);
+            
+            if (signal === 'LONG') {
+                const lowestLow = Math.min(...past5Lows);
+                sl = lowestLow - (lastATR * 1.8);
+                if (sl >= lastPrice) sl = lastPrice * 0.985;
+                rr = (tp - lastPrice) / (lastPrice - sl);
+            } else if (signal === 'SHORT') {
+                const highestHigh = Math.max(...past5Highs);
+                sl = highestHigh + (lastATR * 1.8);
+                if (sl <= lastPrice) sl = lastPrice * 1.015;
                 rr = (lastPrice - tp) / (sl - lastPrice);
             }
         }
@@ -5137,6 +5155,7 @@ class SNRTracer {
         const pinEl = document.getElementById('strategy-pinbar-filter');
         const rsiDivEl = document.getElementById('strategy-rsi-div-filter');
         const fundEl = document.getElementById('strategy-funding-filter');
+        const atr2El = document.getElementById('strategy-atr2-filter');
 
         const emaPeriod = (emaEl && emaEl.value.trim()) ? parseInt(emaEl.value) : 50;
         const atrMultiplier = (atrEl && atrEl.value.trim()) ? parseFloat(atrEl.value) : 1.5;
@@ -5167,7 +5186,8 @@ class SNRTracer {
             volumeMultiplier,
             pinbarFilter: pinEl ? pinEl.value : 'ON',
             rsiDivFilter: rsiDivEl ? rsiDivEl.value : 'ON',
-            fundingFilter: fundEl ? fundEl.value : 'ON'
+            fundingFilter: fundEl ? fundEl.value : 'ON',
+            atr2Filter: atr2El ? atr2El.value : 'ON'
         };
 
         const email = this.currentUser.email;

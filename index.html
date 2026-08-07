@@ -262,6 +262,13 @@
                                 <option value="OFF">🔴 關閉 (不限制資金費率)</option>
                             </select>
                         </div>
+                        <div class="input-group">
+                            <label style="display: block; font-size: 11px; color: #f1c40f; font-weight: 600; margin-bottom: 5px;">🛡️ ATR 2.0 插針緩衝帶狀止損 (Chandelier Exit)</label>
+                            <select id="strategy-atr2-filter" style="width: 100%; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); padding: 8px 12px; border-radius: 6px; color: #f1c40f; font-weight: 600; outline: none; font-size: 12px;">
+                                <option value="ON">🟢 開啟 (K線極值 ± 1.8*ATR 防插針包覆)</option>
+                                <option value="OFF">🔴 關閉 (使用普通支撐壓力止損)</option>
+                            </select>
+                        </div>
                     </div>
                     <div style="margin-top: 15px;">
                         <button id="save-strategy-config-btn" class="primary-btn-sm" style="width: auto; padding: 8px 20px;">儲存策略設定</button>
@@ -813,7 +820,7 @@
     <!-- Firebase SDK (v8 Compatibility Mode) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="index.js?v=1785329000"></script>
+    <script src="index.js?v=1785330000"></script>
 </body>
 
 </html>
