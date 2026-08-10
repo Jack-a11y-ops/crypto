@@ -2954,9 +2954,8 @@ class SNRTracer {
                 close: d.close
             }));
 
-            // 歷史回測著重於 EMA 趨勢與 ATR 盈虧比結構，適度放行單根 K 線的極端 Pinbar/背離限制以產生完整回測數據
-            const evalConfig = config ? { ...config, pinbarFilter: 'OFF', rsiDivFilter: 'OFF', fundingFilter: 'OFF' } : null;
-            const analysis = this.analyzeSNR(historicalWindow, evalConfig);
+            // 100% 完全依照使用者在「策略參數自定義與雲端同步設定」面板中設定的所有參數與過濾器進行歷史回測
+            const analysis = this.analyzeSNR(historicalWindow, config);
 
             if (activeTrade) {
                 if (analysis.signal !== 'WATCH' && analysis.rr > 1.0) {
