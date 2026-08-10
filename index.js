@@ -3238,9 +3238,9 @@ class SNRTracer {
             for (const ema of emaPeriods) {
                 for (const atr of atrMultipliers) {
                     const testConfig = {
+                        ...this.strategyConfig,
                         emaPeriod: ema,
-                        atrMultiplier: atr,
-                        riskRatio: this.strategyConfig.riskRatio || 30
+                        atrMultiplier: atr
                     };
 
                     const trades = this.evaluateStrategy(klines, symbol, testConfig);
@@ -3642,9 +3642,9 @@ class SNRTracer {
             for (const ema of emaPeriods) {
                 for (const atr of atrMultipliers) {
                     const testConfig = {
+                        ...this.strategyConfig,
                         emaPeriod: ema,
-                        atrMultiplier: atr,
-                        riskRatio: this.strategyConfig.riskRatio || 30
+                        atrMultiplier: atr
                     };
 
                     const progressPercent = 40 + (combinationIndex / totalCombinations) * 55;
