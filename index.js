@@ -5138,6 +5138,96 @@ class SNRTracer {
         }
     }
 
+    applyStrategyConfigToUI() {
+        if (!this.strategyConfig) return;
+        const emaEl = document.getElementById('strategy-ema-period');
+        const atrEl = document.getElementById('strategy-atr-multiplier');
+        const riskEl = document.getElementById('strategy-risk-ratio');
+        const feeEl = document.getElementById('strategy-fee-rate');
+        const slipEl = document.getElementById('strategy-slippage');
+        const mtfEl = document.getElementById('strategy-mtf-filter');
+        const volFEl = document.getElementById('strategy-volume-filter');
+        const volMEl = document.getElementById('strategy-volume-multiplier');
+        const pinEl = document.getElementById('strategy-pinbar-filter');
+        const rsiDivEl = document.getElementById('strategy-rsi-div-filter');
+        const fundEl = document.getElementById('strategy-funding-filter');
+        const atr2El = document.getElementById('strategy-atr2-filter');
+
+        if (emaEl) emaEl.value = this.strategyConfig.emaPeriod !== undefined ? this.strategyConfig.emaPeriod : 50;
+        if (atrEl) atrEl.value = this.strategyConfig.atrMultiplier !== undefined ? this.strategyConfig.atrMultiplier : 1.5;
+        if (riskEl) riskEl.value = this.strategyConfig.riskRatio !== undefined ? this.strategyConfig.riskRatio : 30;
+        if (feeEl) feeEl.value = this.strategyConfig.feeRate !== undefined ? this.strategyConfig.feeRate : 0.05;
+        if (slipEl) slipEl.value = this.strategyConfig.slippage !== undefined ? this.strategyConfig.slippage : 0.02;
+        if (mtfEl) mtfEl.value = this.strategyConfig.mtfFilter || 'ON';
+        if (volFEl) volFEl.value = this.strategyConfig.volumeFilter || 'ON';
+        if (volMEl) volMEl.value = this.strategyConfig.volumeMultiplier !== undefined ? this.strategyConfig.volumeMultiplier : 1.2;
+        if (pinEl) pinEl.value = this.strategyConfig.pinbarFilter || 'ON';
+        if (rsiDivEl) rsiDivEl.value = this.strategyConfig.rsiDivFilter || 'ON';
+        if (fundEl) fundEl.value = this.strategyConfig.fundingFilter || 'ON';
+        if (atr2El) atr2El.value = this.strategyConfig.atr2Filter || 'ON';
+
+        const lossRatioEl = document.getElementById('calc-loss-ratio');
+        if (lossRatioEl) {
+            lossRatioEl.value = this.strategyConfig.riskRatio;
+            this.calculateLeverage();
+        }
+    }
+
+    initStrategyConfig() {
+        if (!this.currentUser) return;
+        const email = this.currentUser.email;
+        const configKey = `snr_strategy_config_${email}`;
+        
+        const defaultConfig = {
+            emaPeriod: 50,
+            atrMultiplier: 1.5,
+            riskRatio: 30,
+            feeRate: 0.05,
+            slippage: 0.02,
+            mtfFilter: 'ON',
+            volumeFilter: 'ON',
+            volumeMultiplier: 1.2,
+            pinbarFilter: 'ON',
+            rsiDivFilter: 'ON',
+            fundingFilter: 'ON',
+            atr2Filter: 'ON'
+        };
+
+        // 1. 先從本地快取載入
+        try {
+            const saved = localStorage.getItem(configKey);
+            if (saved) {
+                this.strategyConfig = { ...defaultConfig, ...JSON.parse(saved) };
+            } else {
+                this.strategyConfig = { ...defaultConfig };
+            }
+        } catch (e) {
+            this.strategyConfig = { ...defaultConfig };
+        }
+        this.applyStrategyConfigToUI();
+
+        // 2. 向 Firebase 雲端載入最新策略設定，並開啟跨裝置實時雙向同步 (.on('value'))
+        if (this.db) {
+            try {
+                const safeEmail = email.replace(/\./g, '_');
+                const dbRef = this.db.ref(`users/${safeEmail}/strategyConfig`);
+                
+                dbRef.on('value', (snapshot) => {
+                    if (snapshot.exists()) {
+                        const cloudConfig = snapshot.val();
+                        if (cloudConfig && typeof cloudConfig === 'object') {
+                            this.strategyConfig = { ...defaultConfig, ...cloudConfig };
+                            localStorage.setItem(configKey, JSON.stringify(this.strategyConfig));
+                            this.applyStrategyConfigToUI();
+                        }
+                    }
+                });
+            } catch (err) {
+                console.error('Firebase realtime strategyConfig sync error:', err);
+            }
+        }
+    }
+
     saveStrategyConfig() {
         if (!this.currentUser) {
             alert('請先登入帳戶再儲存設定！');
