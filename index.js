@@ -1231,43 +1231,42 @@ class SNRTracer {
 
     // 核心 SNR 運算邏輯 (整合 EMA 趨勢、ATR 波動度、RSI與MACD多指標共振)
     detectRSIDivergence(data) {
-        if (!data || data.length < 35) return { bullDivergence: false, bearDivergence: false };
+        if (!data || data.length < 20) return { bullDivergence: true, bearDivergence: true };
         const rsiArr = this.calculateRSI(data, 14);
-        const sliceLen = Math.min(data.length, 35);
+        if (!rsiArr || rsiArr.length < 20) return { bullDivergence: true, bearDivergence: true };
+
+        const sliceLen = Math.min(data.length, 30);
         const subData = data.slice(-sliceLen);
         const subRSI = rsiArr.slice(-sliceLen);
 
-        let bullDivergence = false;
-        let bearDivergence = false;
-
         const lastPrice = subData[subData.length - 1].close;
         const lastRSI = subRSI[subRSI.length - 1];
+        const prevRSI = subRSI[subRSI.length - 2];
 
-        // 1. 檢測底背離 (Bullish Divergence: 價格創新低，但 RSI 抬高)
-        let prevMinPrice = Infinity;
-        let prevMinRSI = Infinity;
-        for (let i = 0; i < subData.length - 5; i++) {
-            if (subData[i].low < prevMinPrice) {
-                prevMinPrice = subData[i].low;
-                prevMinRSI = subRSI[i];
+        // 1. 底背離 (Bullish Divergence): RSI 處於相對低位區 (< 50) 且 RSI 出現向上抬升回勾
+        let bullDivergence = (lastRSI < 50) && (lastRSI > prevRSI);
+        // 尋找過去 20 根內的價格與 RSI 走勢對比
+        let minPrice = Infinity, minRsiVal = Infinity;
+        for (let i = 0; i < subData.length - 2; i++) {
+            if (subData[i].low < minPrice) {
+                minPrice = subData[i].low;
+                minRsiVal = subRSI[i];
             }
         }
-
-        if (lastPrice <= prevMinPrice * 1.005 && lastRSI > prevMinRSI + 3) {
+        if (lastPrice <= minPrice * 1.01 && lastRSI > minRsiVal) {
             bullDivergence = true;
         }
 
-        // 2. 檢測頂背離 (Bearish Divergence: 價格創新高，但 RSI 降低)
-        let prevMaxPrice = -Infinity;
-        let prevMaxRSI = -Infinity;
-        for (let i = 0; i < subData.length - 5; i++) {
-            if (subData[i].high > prevMaxPrice) {
-                prevMaxPrice = subData[i].high;
-                prevMaxRSI = subRSI[i];
+        // 2. 頂背離 (Bearish Divergence): RSI 處於相對高位區 (> 50) 且 RSI 出現向下回落
+        let bearDivergence = (lastRSI > 50) && (lastRSI < prevRSI);
+        let maxPrice = -Infinity, maxRsiVal = -Infinity;
+        for (let i = 0; i < subData.length - 2; i++) {
+            if (subData[i].high > maxPrice) {
+                maxPrice = subData[i].high;
+                maxRsiVal = subRSI[i];
             }
         }
-
-        if (lastPrice >= prevMaxPrice * 0.995 && lastRSI < prevMaxRSI - 3) {
+        if (lastPrice >= maxPrice * 0.99 && lastRSI < maxRsiVal) {
             bearDivergence = true;
         }
 
