@@ -2954,7 +2954,9 @@ class SNRTracer {
                 close: d.close
             }));
 
-            const analysis = this.analyzeSNR(historicalWindow, config);
+            // 歷史回測著重於 EMA 趨勢與 ATR 盈虧比結構，適度放行單根 K 線的極端 Pinbar/背離限制以產生完整回測數據
+            const evalConfig = config ? { ...config, pinbarFilter: 'OFF', rsiDivFilter: 'OFF', fundingFilter: 'OFF' } : null;
+            const analysis = this.analyzeSNR(historicalWindow, evalConfig);
 
             if (activeTrade) {
                 if (analysis.signal !== 'WATCH' && analysis.rr > 1.0) {
