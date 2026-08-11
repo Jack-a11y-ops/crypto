@@ -552,7 +552,21 @@ async function run() {
         process.exit(0);
     }
 
-    const strategyConfig = userData.strategyConfig || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
+    const defaultConfig = {
+        emaPeriod: 50,
+        atrMultiplier: 1.5,
+        riskRatio: 30,
+        feeRate: 0.05,
+        slippage: 0.02,
+        mtfFilter: 'ON',
+        volumeFilter: 'ON',
+        volumeMultiplier: 1.2,
+        pinbarFilter: 'ON',
+        rsiDivFilter: 'ON',
+        fundingFilter: 'ON',
+        atr2Filter: 'ON'
+    };
+    const strategyConfig = { ...defaultConfig, ...(userData.strategyConfig || {}) };
     
     console.log(`Firebase 設定讀取成功。Telegram 頻道就緒。`);
     console.log(`正在從幣安下載前 50 大成交量標的...`);
@@ -647,11 +661,9 @@ async function run() {
     for (const ema of emaPeriods) {
         for (const atr of atrMultipliers) {
             const testConfig = {
+                ...strategyConfig,
                 emaPeriod: ema,
-                atrMultiplier: atr,
-                riskRatio: strategyConfig.riskRatio || 30,
-                feeRate: strategyConfig.feeRate !== undefined ? strategyConfig.feeRate : 0.05,
-                slippage: strategyConfig.slippage !== undefined ? strategyConfig.slippage : 0.02
+                atrMultiplier: atr
             };
 
             combinationIndex++;
