@@ -137,156 +137,379 @@ function calculateMACD(data) {
     return { macd: macdLine, signal: signalLine, hist };
 }
 
-// 5. 支撐壓力與共振信號分析 (預計算極速版)
-function analyzeSNRFast(klines, idx, precalculated, config) {
-    const emaPeriod = config.emaPeriod || 50;
-    const atrMultiplier = config.atrMultiplier || 1.5;
+// 5. 支撐壓力與共振信號分析 (全能完整版 - 與前端100%完全一致)
 
-    const lastPrice = klines[idx].close;
-    
-    // 直接獲取預計算指標
-    const lastEMA = precalculated.ema[emaPeriod][idx];
-    const prevEMA = precalculated.ema[emaPeriod][idx - 1];
-    const lastATR = precalculated.atr[idx];
-    const lastRSI = precalculated.rsi[idx];
-    const lastHist = precalculated.macdHist[idx];
-    const prevHist = precalculated.macdHist[idx - 1];
-
-    // 篩選出 index <= idx - 2 的 pivots
-    const pivots = precalculated.pivots.filter(p => p.index <= idx - 2);
-
-    const threshold = lastATR > 0 ? lastATR * 0.8 : lastPrice * 0.006;
-    let levels = [];
-    pivots.forEach(p => {
-        let found = levels.find(l => Math.abs(p.value - l.value) < threshold);
-        if (found) {
-            found.count++;
-            found.value = (found.value + p.value) / 2;
-        } else {
-            levels.push({ value: p.value, count: 1 });
-        }
-    });
-
-    levels = levels.filter(l => l.count >= 2).sort((a, b) => b.value - a.value);
-
-    let support = levels.filter(l => l.value < lastPrice * 1.002).sort((a, b) => b.value - a.value)[0];
-    let resistance = levels.filter(l => l.value > lastPrice * 0.998).sort((a, b) => a.value - b.value)[0];
-
-    let signal = 'WATCH';
-    let rr = 0;
-    let sl = 0;
-    let tp = 0;
-
-    const triggerDist = lastATR > 0 ? lastATR * atrMultiplier : lastPrice * (atrMultiplier * 0.01);
-    const slBuffer = lastATR > 0 ? lastATR * atrMultiplier : lastPrice * (atrMultiplier * 0.01);
-
-    if (support && resistance) {
-        const distToSupport = lastPrice - support.value;
-        const distToResistance = resistance.value - lastPrice;
-
-        if (distToSupport < triggerDist) {
-            signal = 'LONG';
-            sl = support.value - slBuffer;
-            tp = resistance.value;
-            rr = (tp - lastPrice) / (lastPrice - sl);
-        } else if (distToResistance < triggerDist) {
-            signal = 'SHORT';
-            sl = resistance.value + slBuffer;
-            tp = support.value;
-            rr = (lastPrice - tp) / (sl - lastPrice);
-        }
-    }
-
-    if (signal === 'LONG') {
-        if (tp <= lastPrice || rr <= 0) {
-            signal = 'WATCH';
-            rr = 0;
-            sl = 0;
-            tp = 0;
-        }
-    } else if (signal === 'SHORT') {
-        if (tp >= lastPrice || rr <= 0) {
-            signal = 'WATCH';
-            rr = 0;
-            sl = 0;
-            tp = 0;
-        }
-    }
-
-    if (signal === 'LONG') {
-        if (lastPrice < lastEMA && lastEMA < prevEMA) {
-            signal = 'WATCH';
-            rr = 0;
-            sl = 0;
-            tp = 0;
-        }
-    } else if (signal === 'SHORT') {
-        if (lastPrice > lastEMA && lastEMA > prevEMA) {
-            signal = 'WATCH';
-            rr = 0;
-            sl = 0;
-            tp = 0;
-        }
-    }
-
-    if (signal === 'LONG' && lastRSI !== null && lastRSI > 65) {
-        signal = 'WATCH';
-        rr = 0;
-        sl = 0;
-        tp = 0;
-    } else if (signal === 'SHORT' && lastRSI !== null && lastRSI < 35) {
-        signal = 'WATCH';
-        rr = 0;
-        sl = 0;
-        tp = 0;
-    }
-
-    let winRate = 0.50;
-    if (signal !== 'WATCH') {
-        const level = signal === 'LONG' ? support : resistance;
-        if (level && level.count) {
-            winRate += Math.min((level.count - 2) * 0.02, 0.08);
-        }
-
-        const isEMAUprising = lastEMA > prevEMA;
-        const isEMADeclining = lastEMA < prevEMA;
-        
-        if (signal === 'LONG') {
-            if (lastPrice > lastEMA && isEMAUprising) winRate += 0.08;
-            else if (lastPrice < lastEMA && isEMAUprising) winRate += 0.02;
-        } else if (signal === 'SHORT') {
-            if (lastPrice < lastEMA && isEMADeclining) winRate += 0.08;
-            else if (lastPrice > lastEMA && isEMADeclining) winRate += 0.02;
-        }
-
-        const levelVal = signal === 'LONG' ? support.value : resistance.value;
-        const distToLevel = Math.abs(lastPrice - levelVal);
-        if (lastATR > 0) {
-            winRate += Math.min(Math.max((atrMultiplier - (distToLevel / lastATR)) * 0.04, -0.02), 0.06);
-        }
-
-        if (signal === 'LONG' && lastRSI !== null && lastRSI < 40) winRate += 0.08;
-        else if (signal === 'SHORT' && lastRSI !== null && lastRSI > 60) winRate += 0.08;
-
-        if (lastHist !== null && prevHist !== null) {
-            if (signal === 'LONG') {
-                if (lastHist > 0 || lastHist > prevHist) winRate += 0.05;
-                else if (lastHist < 0 && lastHist < prevHist) winRate -= 0.05;
-            } else if (signal === 'SHORT') {
-                if (lastHist < 0 || lastHist < prevHist) winRate += 0.05;
-                else if (lastHist > 0 && lastHist > prevHist) winRate -= 0.05;
-            }
-        }
-    } else {
-        winRate = 0.0;
-    }
-    
-    winRate = Math.min(Math.max(winRate, 0.35), 0.75);
-
-    return { levels, support, resistance, signal, rr, sl, tp, lastATR, winRate, rsi: lastRSI, macdHist: lastHist };
+function calculateLastATR(data, period = 14) {
+    if (!data || data.length < period) return 0;
+    const atrSeries = calculateATRSeries(data, period);
+    return atrSeries[atrSeries.length - 1] || 0;
 }
 
-// 6. 無副作用策略回測計算 (極速版)
+function detectRSIDivergence(data) {
+        if (!data || data.length < 20) return { bullDivergence: true, bearDivergence: true };
+        const rsiArr = calculateRSI(data, 14);
+        if (!rsiArr || rsiArr.length < 20) return { bullDivergence: true, bearDivergence: true };
+
+        const sliceLen = Math.min(data.length, 30);
+        const subData = data.slice(-sliceLen);
+        const subRSI = rsiArr.slice(-sliceLen);
+
+        const lastPrice = subData[subData.length - 1].close;
+        const lastRSI = subRSI[subRSI.length - 1];
+        const prevRSI = subRSI[subRSI.length - 2];
+
+        // 1. 底背離 (Bullish Divergence): RSI 處於相對低位區 (< 50) 且 RSI 出現向上抬升回勾
+        let bullDivergence = (lastRSI < 50) && (lastRSI > prevRSI);
+        // 尋找過去 20 根內的價格與 RSI 走勢對比
+        let minPrice = Infinity, minRsiVal = Infinity;
+        for (let i = 0; i < subData.length - 2; i++) {
+            if (subData[i].low < minPrice) {
+                minPrice = subData[i].low;
+                minRsiVal = subRSI[i];
+            }
+        }
+        if (lastPrice <= minPrice * 1.01 && lastRSI > minRsiVal) {
+            bullDivergence = true;
+        }
+
+        // 2. 頂背離 (Bearish Divergence): RSI 處於相對高位區 (> 50) 且 RSI 出現向下回落
+        let bearDivergence = (lastRSI > 50) && (lastRSI < prevRSI);
+        let maxPrice = -Infinity, maxRsiVal = -Infinity;
+        for (let i = 0; i < subData.length - 2; i++) {
+            if (subData[i].high > maxPrice) {
+                maxPrice = subData[i].high;
+                maxRsiVal = subRSI[i];
+            }
+        }
+        if (lastPrice >= maxPrice * 0.99 && lastRSI < maxRsiVal) {
+            bearDivergence = true;
+        }
+
+        return { bullDivergence, bearDivergence };
+    }
+
+function analyzeSNR(data, config = null, klines1h = null, fundingRate = null) {
+        const activeConfig = config || config || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30 };
+        const emaPeriod = activeConfig.emaPeriod || 50;
+        const atrMultiplier = activeConfig.atrMultiplier || 1.5;
+
+        const lastPrice = data[data.length - 1].close;
+        const emaVal = calculateEMA(data, emaPeriod);
+        const lastEMA = emaVal[emaVal.length - 1];
+        const prevEMA = emaVal[emaVal.length - 2];
+        const lastATR = calculateLastATR(data, 14);
+
+        // 多指標共振計算
+        const rsiVal = calculateRSI(data, 14);
+        const lastRSI = rsiVal[rsiVal.length - 1];
+        const macdVal = calculateMACD(data);
+        const lastHist = macdVal.hist[macdVal.hist.length - 1];
+        const prevHist = macdVal.hist[macdVal.hist.length - 2];
+
+        const pivots = [];
+        for (let i = 2; i < data.length - 2; i++) {
+            if (data[i].high > data[i - 1].high && data[i].high > data[i - 2].high &&
+                data[i].high > data[i + 1].high && data[i].high > data[i + 2].high) {
+                pivots.push({ type: 'high', value: data[i].high });
+            }
+            if (data[i].low < data[i - 1].low && data[i].low < data[i - 2].low &&
+                data[i].low < data[i + 1].low && data[i].low < data[i + 2].low) {
+                pivots.push({ type: 'low', value: data[i].low });
+            }
+        }
+
+        // 動態合併閾值 (ATR-based)
+        const threshold = lastATR > 0 ? lastATR * 0.8 : lastPrice * 0.006;
+        let levels = [];
+        pivots.forEach(p => {
+            let found = levels.find(l => Math.abs(p.value - l.value) < threshold);
+            if (found) {
+                found.count++;
+                found.value = (found.value + p.value) / 2;
+            } else {
+                levels.push({ value: p.value, count: 1 });
+            }
+        });
+
+        levels = levels.filter(l => l.count >= 2).sort((a, b) => b.value - a.value);
+
+        let support = levels.filter(l => l.value < lastPrice * 1.002).sort((a, b) => b.value - a.value)[0];
+        let resistance = levels.filter(l => l.value > lastPrice * 0.998).sort((a, b) => a.value - b.value)[0];
+
+        let signal = 'WATCH';
+        let rr = 0;
+        let sl = 0;
+        let tp = 0;
+
+        // 動態進場距離限制 (ATR-based)
+        const triggerDist = lastATR > 0 ? lastATR * atrMultiplier : lastPrice * (atrMultiplier * 0.01);
+        
+        // 動態止損緩衝 (ATR-based)
+        const slBuffer = lastATR > 0 ? lastATR * atrMultiplier : lastPrice * (atrMultiplier * 0.01);
+
+        if (support && resistance) {
+            const distToSupport = lastPrice - support.value;
+            const distToResistance = resistance.value - lastPrice;
+
+            if (distToSupport < triggerDist) {
+                signal = 'LONG';
+                sl = support.value - slBuffer;
+                tp = resistance.value;
+                rr = (tp - lastPrice) / (lastPrice - sl);
+            } else if (distToResistance < triggerDist) {
+                signal = 'SHORT';
+                sl = resistance.value + slBuffer;
+                tp = support.value;
+                rr = (lastPrice - tp) / (sl - lastPrice);
+            }
+        }
+
+        // === ATR 2.0 動態帶狀止損防護罩 (Chandelier Exit) ===
+        if (signal !== 'WATCH' && activeConfig.atr2Filter === 'ON' && data.length >= 5) {
+            const past5Lows = data.slice(-5).map(k => k.low);
+            const past5Highs = data.slice(-5).map(k => k.high);
+            
+            if (signal === 'LONG') {
+                const lowestLow = Math.min(...past5Lows);
+                sl = lowestLow - (lastATR * 1.8);
+                if (sl >= lastPrice) sl = lastPrice * 0.985;
+                rr = (tp - lastPrice) / (lastPrice - sl);
+            } else if (signal === 'SHORT') {
+                const highestHigh = Math.max(...past5Highs);
+                sl = highestHigh + (lastATR * 1.8);
+                if (sl <= lastPrice) sl = lastPrice * 1.015;
+                rr = (lastPrice - tp) / (sl - lastPrice);
+            }
+        }
+
+        // 確保止盈方向正確且盈虧比為正值，防範支撐壓力重疊造成的異常信號
+        if (signal === 'LONG') {
+            if (tp <= lastPrice || rr <= 0) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        } else if (signal === 'SHORT') {
+            if (tp >= lastPrice || rr <= 0) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        }
+
+        // 趨勢過濾 (EMA-based)
+        if (signal === 'LONG') {
+            // 如果是空頭趨勢 (價格低於 EMA 且 EMA 下降)，過濾 LONG 訊號
+            if (lastPrice < lastEMA && lastEMA < prevEMA) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        } else if (signal === 'SHORT') {
+            // 如果是多頭趨勢 (價格高於 EMA 且 EMA 上升)，過濾 SHORT 訊號
+            if (lastPrice > lastEMA && lastEMA > prevEMA) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        }
+
+        // === 多指標共振過濾 (RSI超買超賣過濾) ===
+        if (signal === 'LONG' && lastRSI !== null && lastRSI > 65) {
+            // 已超買，避免在支撐位追漲殺跌，過濾信號
+            signal = 'WATCH';
+            rr = 0;
+            sl = 0;
+            tp = 0;
+        } else if (signal === 'SHORT' && lastRSI !== null && lastRSI < 35) {
+            // 已超賣，避免在阻力位追跌殺漲，過濾信號
+            signal = 'WATCH';
+            rr = 0;
+            sl = 0;
+            tp = 0;
+        }
+
+        // === 勝率過濾器 1: 5M 成交量爆量過濾器 (Volume Spike Filter) ===
+        if (signal !== 'WATCH' && activeConfig.volumeFilter === 'ON') {
+            const volMult = activeConfig.volumeMultiplier || 1.2;
+            const past20Vols = data.slice(-21, -1).map(k => k.volume);
+            if (past20Vols.length > 0) {
+                const avgVol20 = past20Vols.reduce((a, b) => a + b, 0) / past20Vols.length;
+                const lastVol = data[data.length - 1].volume;
+                if (lastVol < avgVol20 * volMult) {
+                    signal = 'WATCH';
+                    rr = 0;
+                    sl = 0;
+                    tp = 0;
+                }
+            }
+        }
+
+        // === 勝率過濾器 2: 1H 多週期趨勢順勢過濾器 (Multi-Timeframe Filter) ===
+        if (signal !== 'WATCH' && activeConfig.mtfFilter === 'ON' && klines1h && klines1h.length >= 50) {
+            const closes1h = klines1h.map(k => parseFloat(k.close));
+            const ema1h = calculateEMA(klines1h, 50);
+            const last1hClose = closes1h[closes1h.length - 1];
+            const last1hEMA = ema1h[ema1h.length - 1];
+            const trend1h = last1hClose > last1hEMA ? 'LONG' : 'SHORT';
+            
+            if (signal !== trend1h) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        }
+
+        // === 勝率過濾器 3: K 線反轉型態二次確認 (Pinbar / Bullish & Bearish Engulfing) ===
+        if (signal !== 'WATCH' && activeConfig.pinbarFilter === 'ON' && data.length >= 2) {
+            const lastCandle = data[data.length - 1];
+            const prevCandle = data[data.length - 2];
+
+            const o = lastCandle.open, h = lastCandle.high, l = lastCandle.low, c = lastCandle.close;
+            const range = h - l;
+            const body = Math.abs(c - o);
+            const lowerShadow = Math.min(o, c) - l;
+            const upperShadow = h - Math.max(o, c);
+
+            let hasReversalPattern = false;
+
+            if (signal === 'LONG') {
+                // 1. 長下影線 Pinbar (鎚頭線)
+                const isBullishPinbar = range > 0 && (lowerShadow >= range * 0.45) && (lowerShadow >= body * 1.5);
+                // 2. 看漲吞噬 (Bullish Engulfing)
+                const isBullishEngulfing = (prevCandle.close < prevCandle.open) && (c > o) && (c >= prevCandle.open) && (o <= prevCandle.close);
+                
+                if (isBullishPinbar || isBullishEngulfing) {
+                    hasReversalPattern = true;
+                }
+            } else if (signal === 'SHORT') {
+                // 1. 長上影線 Pinbar (倒鎚頭)
+                const isBearishPinbar = range > 0 && (upperShadow >= range * 0.45) && (upperShadow >= body * 1.5);
+                // 2. 看跌吞噬 (Bearish Engulfing)
+                const isBearishEngulfing = (prevCandle.close > prevCandle.open) && (c < o) && (c <= prevCandle.open) && (o >= prevCandle.close);
+                
+                if (isBearishPinbar || isBearishEngulfing) {
+                    hasReversalPattern = true;
+                }
+            }
+
+            if (!hasReversalPattern) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        }
+
+        // === 勝率過濾器 4: RSI 頂底背離二次確認 (RSI Divergence Filter) ===
+        if (signal !== 'WATCH' && activeConfig.rsiDivFilter === 'ON') {
+            const divRes = detectRSIDivergence(data);
+            if (signal === 'LONG' && !divRes.bullDivergence) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            } else if (signal === 'SHORT' && !divRes.bearDivergence) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        }
+
+        // === 勝率過濾器 5: 幣安合約資金費率極端過濾器 (Funding Rate Filter) ===
+        if (signal !== 'WATCH' && activeConfig.fundingFilter === 'ON' && fundingRate !== null) {
+            // 資金費率 > +0.05% (+0.0005) 代表市場做多極度過熱，強烈禁止追多
+            if (signal === 'LONG' && fundingRate > 0.0005) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+            // 資金費率 < -0.05% (-0.0005) 代表市場做空極度恐慌，強烈禁止追空
+            else if (signal === 'SHORT' && fundingRate < -0.0005) {
+                signal = 'WATCH';
+                rr = 0;
+                sl = 0;
+                tp = 0;
+            }
+        }
+
+        // === 計算綜合勝率評估分數 (winRate) ===
+        let winRate = 0.50; // 基礎勝率 50%
+        if (signal !== 'WATCH') {
+            // 1. 支撐/壓力強度加分 (Level Strength)
+            const level = signal === 'LONG' ? support : resistance;
+            if (level && level.count) {
+                const strengthAdd = Math.min((level.count - 2) * 0.02, 0.08);
+                winRate += strengthAdd;
+            }
+
+            // 2. 順勢度加分 (Trend Alignment)
+            const isEMAUprising = lastEMA > prevEMA;
+            const isEMADeclining = lastEMA < prevEMA;
+            
+            if (signal === 'LONG') {
+                if (lastPrice > lastEMA && isEMAUprising) {
+                    winRate += 0.08;
+                } else if (lastPrice < lastEMA && isEMAUprising) {
+                    winRate += 0.02;
+                }
+            } else if (signal === 'SHORT') {
+                if (lastPrice < lastEMA && isEMADeclining) {
+                    winRate += 0.08;
+                } else if (lastPrice > lastEMA && isEMADeclining) {
+                    winRate += 0.02;
+                }
+            }
+
+            // 3. 進場點精確度加分 (Entry Precision)
+            const levelVal = signal === 'LONG' ? support.value : resistance.value;
+            const distToLevel = Math.abs(lastPrice - levelVal);
+            if (lastATR > 0) {
+                const distRatio = distToLevel / lastATR;
+                const precisionAdd = Math.min(Math.max((atrMultiplier - distRatio) * 0.04, -0.02), 0.06);
+                winRate += precisionAdd;
+            }
+
+            // 4. RSI 共振加分
+            if (signal === 'LONG' && lastRSI !== null && lastRSI < 40) {
+                winRate += 0.08; // 超跌回檔區做多，勝率提升
+            } else if (signal === 'SHORT' && lastRSI !== null && lastRSI > 60) {
+                winRate += 0.08; // 超漲反彈區做空，勝率提升
+            }
+
+            // 5. MACD 動能共振加減分
+            if (lastHist !== null && prevHist !== null) {
+                if (signal === 'LONG') {
+                    if (lastHist > 0 || lastHist > prevHist) {
+                        winRate += 0.05; // 多頭動能增強，加分
+                    } else if (lastHist < 0 && lastHist < prevHist) {
+                        winRate -= 0.05; // 仍在急跌段，扣分
+                    }
+                } else if (signal === 'SHORT') {
+                    if (lastHist < 0 || lastHist < prevHist) {
+                        winRate += 0.05; // 空頭動能增強，加分
+                    } else if (lastHist > 0 && lastHist > prevHist) {
+                        winRate -= 0.05; // 仍在急漲段，扣分
+                    }
+                }
+            }
+        } else {
+            winRate = 0.0;
+        }
+        
+        // 限制最終勝率在 35% ~ 75% 之間
+        winRate = Math.min(Math.max(winRate, 0.35), 0.75);
+
+        return { levels, support, resistance, signal, rr, sl, tp, lastATR, winRate, rsi: lastRSI, macdHist: lastHist };
+    }
+
 function evaluateStrategyFast(klines, symbol, precalculated, config = null) {
     const activeConfig = config || { emaPeriod: 50, atrMultiplier: 1.5, riskRatio: 30, feeRate: 0.05, slippage: 0.02 };
     const feeRate = activeConfig.feeRate !== undefined ? activeConfig.feeRate : 0.05;
@@ -588,14 +811,16 @@ async function run() {
         process.exit(1);
     }
 
-    console.log(`已成功取得熱門交易對。準備為 50 大標的下載最近 3000 根 15M K 線...`);
+    const interval = userData.backtestInterval || '5m';
+    const limit = userData.backtestLimit || 1000;
+    console.log(`已成功取得熱門交易對。準備為 50 大標的下載最近 ${limit} 根 ${interval.toUpperCase()} K 線...`);
     const allKlines = {};
 
     for (let i = 0; i < top50.length; i++) {
         const sym = top50[i];
         console.log(`[${i + 1}/${top50.length}] 正在下載 ${sym} 的歷史 15M K 線...`);
         try {
-            const klines = await getBinanceKlines(sym, '15m', 3000);
+            const klines = await getBinanceKlines(sym, interval, limit);
             if (klines && klines.length >= 100) {
                 allKlines[sym] = klines;
             } else {
@@ -711,7 +936,7 @@ async function run() {
 
     let msg = `📊 *Crypto SNR 每日回測最佳化報告*\n\n`;
     msg += `• *評估對象*：成交量前 50 大 USDT 交易對\n`;
-    msg += `• *回測配置*：15M 週期 / 最近 3000 根 K 線\n`;
+    msg += `• *回測配置*：${interval.toUpperCase()} 週期 / 最近 ${limit} 根 K 線\n`;
     msg += `• *運行時間*：${localTimeStr}\n\n`;
     msg += `🏆 *最佳策略參數組合 Top 3 推薦*:\n\n`;
 
