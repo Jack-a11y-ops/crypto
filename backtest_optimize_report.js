@@ -525,7 +525,8 @@ function evaluateStrategyFast(klines, symbol, precalculated, config = null) {
 
     for (let i = 100; i < klines.length; i++) {
         const currentK = klines[i];
-        const analysis = analyzeSNRFast(klines, i, precalculated, activeConfig);
+        const historicalWindow = klines.slice(0, i + 1);
+        const analysis = analyzeSNR(historicalWindow, activeConfig);
 
         if (activeTrade) {
             // 勝率平倉替換 (CLOSED)
@@ -811,8 +812,8 @@ async function run() {
         process.exit(1);
     }
 
-    const interval = userData.backtestInterval || '5m';
-    const limit = userData.backtestLimit || 1000;
+    const interval = '15m';
+    const limit = 3000;
     console.log(`已成功取得熱門交易對。準備為 50 大標的下載最近 ${limit} 根 ${interval.toUpperCase()} K 線...`);
     const allKlines = {};
 
