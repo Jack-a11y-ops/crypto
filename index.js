@@ -2055,9 +2055,9 @@ class SNRTracer {
 
         history.unshift(newRecord);
 
-        // 限制只保留最近 500 筆，超出部分自動刪除舊紀錄
-        if (history.length > 500) {
-            history = history.slice(0, 500);
+        // 限制只保留最近 300 筆，超出部分自動刪除舊紀錄
+        if (history.length > 300) {
+            history = history.slice(0, 300);
         }
 
         localStorage.setItem(historyKey, JSON.stringify(history));
@@ -4387,8 +4387,8 @@ class SNRTracer {
                 }
             }
         });
-        // 轉回陣列並依照 id (時間戳記) 從大到小排序，且限制最多 100 筆紀錄
-        return Array.from(mergedMap.values()).sort((a, b) => b.id - a.id).slice(0, 100);
+        // 轉回陣列並依照 id (時間戳記) 從大到小排序，且限制最多 300 筆紀錄
+        return Array.from(mergedMap.values()).sort((a, b) => b.id - a.id).slice(0, 300);
     }
 
     initTelegramConfig() {

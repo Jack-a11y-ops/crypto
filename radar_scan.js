@@ -903,9 +903,9 @@ async function run() {
             messageText += `請儘速前往您的 SNR TRACER 平台查看詳情與設定防守點位！\n`;
             messageText += `網址：https://spontaneous-kheer-c470e5.netlify.app/`;
 
-            // 6.3 限制歷史紀錄長度最長為 100 筆
-            if (history.length > 100) {
-                history = history.slice(0, 100);
+            // 6.3 限制歷史紀錄長度最長為 300 筆
+            if (history.length > 300) {
+                history = history.slice(0, 300);
             }
 
             // 6.4 發送 Telegram Bot API 請求
