@@ -4180,46 +4180,55 @@ class SNRTracer {
     }
 
     async sendTelegramMessage(token, chatId, text) {
-        const body = {
-            chat_id: chatId,
-            text: text
-        };
+        // 使用 URLSearchParams (application/x-www-form-urlencoded) 作為請求體
+        // 關鍵：這屬於 W3C CORS 簡單請求 (Simple Request)，瀏覽器絕不會發送 OPTIONS 預檢！
+        // Telegram 官方伺服器原生返回 Access-Control-Allow-Origin: *，
+        // 因此可以直接在瀏覽器端直連成功，完全不需要依賴第三方代理！
+        const params = new URLSearchParams();
+        params.append('chat_id', chatId);
+        params.append('text', text);
 
+        const directUrl = `https://api.telegram.org/bot${token}/sendMessage`;
         const isNetlify = typeof window !== 'undefined' && window.location && window.location.hostname.includes('netlify.app');
         const netlifyUrl = `/tg-proxy/bot${token}/sendMessage`;
-        const directUrl = `https://api.telegram.org/bot${token}/sendMessage`;
 
-        // 在 Netlify 網頁環境優先走 Netlify 原生反向代理（完全避開跨域限制與第三方代理依賴）
-        // 在本地或其他環境則直連 Telegram 官方 API（Telegram 官方原生支援 CORS: Access-Control-Allow-Origin: *）
-        const primaryUrl = isNetlify ? netlifyUrl : directUrl;
-
+        // 策略 1: 官方直連 (POST + URLSearchParams)
         try {
-            const res = await fetch(primaryUrl, {
+            const res = await fetch(directUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
+                body: params
             });
-            // 若 Netlify 代理返回 404 (例如設定尚未生效)，自動回退嘗試直連 Telegram API
-            if (!res.ok && isNetlify && res.status === 404) {
-                console.warn('Netlify 代理端點返回 404，自動回退直連 Telegram API...');
-                return await fetch(directUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
+            // 若取得 Telegram 伺服器的正常回應 (200 成功，或 400/401 等明確的業務狀態碼)，直接回傳
+            if (res.ok || (res.status >= 400 && res.status < 500)) {
+                return res;
             }
+        } catch (directErr) {
+            console.warn('Telegram API 直連失敗，嘗試備援管道...', directErr);
+        }
+
+        // 策略 2: Netlify 原生反向代理 (若部署在 Netlify 且用戶網路遭防火牆封鎖 telegram.org)
+        if (isNetlify) {
+            try {
+                const res = await fetch(netlifyUrl, {
+                    method: 'POST',
+                    body: params
+                });
+                if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 404)) {
+                    return res;
+                }
+            } catch (proxyErr) {
+                console.warn('Netlify 代理端點連線失敗...', proxyErr);
+            }
+        }
+
+        // 策略 3: GET 請求直連備援 (GET 也是 CORS 簡單請求，原生支援跨域)
+        try {
+            const getUrl = `https://api.telegram.org/bot${token}/sendMessage?chat_id=${encodeURIComponent(chatId)}&text=${encodeURIComponent(text)}`;
+            const res = await fetch(getUrl, { method: 'GET' });
             return res;
-        } catch (primaryErr) {
-            // 若 Netlify 代理連線拋出異常，自動降級嘗試直連 Telegram API
-            if (isNetlify) {
-                console.warn('Netlify 代理請求失敗，自動切換直連 Telegram API...', primaryErr);
-                return await fetch(directUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-            }
-            throw primaryErr;
+        } catch (getErr) {
+            console.error('所有 Telegram 發送管道皆失敗:', getErr);
+            throw getErr;
         }
     }
 
@@ -5396,12 +5405,14 @@ class SNRTracer {
                 let friendlyMsg = `發送失敗，狀態碼: ${response.status}，訊息: ${errText}`;
                 if (errText.includes("chat not found")) {
                     friendlyMsg += `\n\n💡 排除提示：\n1. 請確認您已在 Telegram 搜尋並點開您的機器人，並點擊了底部的「開始 (Start)」按鈕以啟動對話。\n2. 請確認 Chat ID 填寫的是您的個人數字 ID（可透過 @userinfobot 取得），而非 Telegram 使用者名稱。`;
+                } else if (response.status === 401 || errText.includes("Unauthorized")) {
+                    friendlyMsg += `\n\n💡 排除提示：Bot Token 不正確或已失效，請向 @BotFather 檢查您的 Token 是否輸入完整無誤。`;
                 }
                 alert(friendlyMsg);
             }
         } catch (error) {
             console.error('Telegram test notification failed:', error);
-            alert(`測試發送失敗: ${error.message || error}`);
+            alert(`測試發送失敗: ${error.message || error}\n\n💡 排除提示：\n若出現 Failed to fetch，通常表示當前網路環境或防火牆阻擋了連線，或者線上版本尚未部署完成。`);
         } finally {
             testBtn.innerText = '測試 Telegram 發送';
             testBtn.disabled = false;
