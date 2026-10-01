@@ -4179,6 +4179,50 @@ class SNRTracer {
         }
     }
 
+    async sendTelegramMessage(token, chatId, text) {
+        const body = {
+            chat_id: chatId,
+            text: text
+        };
+
+        const isNetlify = typeof window !== 'undefined' && window.location && window.location.hostname.includes('netlify.app');
+        const netlifyUrl = `/tg-proxy/bot${token}/sendMessage`;
+        const directUrl = `https://api.telegram.org/bot${token}/sendMessage`;
+
+        // 在 Netlify 網頁環境優先走 Netlify 原生反向代理（完全避開跨域限制與第三方代理依賴）
+        // 在本地或其他環境則直連 Telegram 官方 API（Telegram 官方原生支援 CORS: Access-Control-Allow-Origin: *）
+        const primaryUrl = isNetlify ? netlifyUrl : directUrl;
+
+        try {
+            const res = await fetch(primaryUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            // 若 Netlify 代理返回 404 (例如設定尚未生效)，自動回退嘗試直連 Telegram API
+            if (!res.ok && isNetlify && res.status === 404) {
+                console.warn('Netlify 代理端點返回 404，自動回退直連 Telegram API...');
+                return await fetch(directUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            }
+            return res;
+        } catch (primaryErr) {
+            // 若 Netlify 代理連線拋出異常，自動降級嘗試直連 Telegram API
+            if (isNetlify) {
+                console.warn('Netlify 代理請求失敗，自動切換直連 Telegram API...', primaryErr);
+                return await fetch(directUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            }
+            throw primaryErr;
+        }
+    }
+
     async sendTelegramBreakEvenNotification(record) {
         if (!this.currentUser) return;
         const email = this.currentUser.email;
@@ -4198,13 +4242,7 @@ class SNRTracer {
         const messageText = `🛡️【1:1 盈虧比 (1RR) 獲利達標警報】\n\n📌 幣種：${cleanSymbol} ${record.type} (${record.interval.toUpperCase()})\n⏰ 開倉時間：${openTimeStr}\n💵 開倉價：$${this.formatPrice(record.entry)}\n🎯 1RR 達標點：$${this.formatPrice(target1RR)}\n\n🎉 該筆交易從開倉時間算起，已成功觸及 1:1 盈虧比 (1RR)！\n💡 系統已自動將止損點修改為開倉保本價 ($${this.formatPrice(record.entry)})，確保該單鎖定零風險保本！`;
 
         try {
-            const corsProxy = 'https://corsproxy.io/?';
-            const url = corsProxy + `https://api.telegram.org/bot${telegramToken}/sendMessage`;
-            fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: telegramChatId, text: messageText })
-            });
+            await this.sendTelegramMessage(telegramToken, telegramChatId, messageText);
         } catch (e) { console.error('Error sending BE telegram notification:', e); }
     }
 
@@ -4233,13 +4271,7 @@ class SNRTracer {
         messageText += `網址：https://spontaneous-kheer-c470e5.netlify.app/`;
 
         try {
-            const corsProxy = 'https://corsproxy.io/?';
-            const url = corsProxy + `https://api.telegram.org/bot${telegramToken}/sendMessage`;
-            fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: telegramChatId, text: messageText })
-            });
+            await this.sendTelegramMessage(telegramToken, telegramChatId, messageText);
         } catch (e) { console.error('Error sending settlement telegram notification:', e); }
     }
 
@@ -5353,22 +5385,9 @@ class SNRTracer {
         testBtn.disabled = true;
 
         try {
-            const corsProxy = 'https://corsproxy.io/?';
-            const targetUrl = `https://api.telegram.org/bot${telegramToken}/sendMessage`;
-            const proxyUrl = corsProxy + targetUrl;
-            
             const messageText = `【SNR TRACER】測試發送\n您好，這是一條來自 SNR TRACER 策略分析儀的 Telegram 測試通知！\n\n當前您的 Telegram Bot 設定正確無誤。當自動掃描偵測到符合條件的交易機會時，您將會立刻收到通知。\n\n發送時間：${new Date().toLocaleString()}`;
 
-            const response = await fetch(proxyUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    chat_id: telegramChatId,
-                    text: messageText
-                })
-            });
+            const response = await this.sendTelegramMessage(telegramToken, telegramChatId, messageText);
 
             if (response.ok) {
                 alert('Telegram 測試通知發送成功！請檢查您的 Telegram 聊天室。');
@@ -5467,10 +5486,6 @@ class SNRTracer {
         }
 
         try {
-            const corsProxy = 'https://corsproxy.io/?';
-            const targetUrl = `https://api.telegram.org/bot${telegramToken}/sendMessage`;
-            const proxyUrl = corsProxy + targetUrl;
-
             // 格式化新發現的機會清單
             let messageText = `【SNR TRACER】雷達發現 ${newOpps.length} 個交易機會！\n\n`;
             messageText += `雷達週期：${this.interval.toUpperCase()}\n\n`;
@@ -5505,20 +5520,11 @@ class SNRTracer {
             messageText += `請儘速前往平台查看詳情與設定防守點位！\n`;
             messageText += `連結：https://spontaneous-kheer-c470e5.netlify.app/`;
 
-            const response = await fetch(proxyUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    chat_id: telegramChatId,
-                    text: messageText
-                })
-            });
+            const response = await this.sendTelegramMessage(telegramToken, telegramChatId, messageText);
 
-            if (response.ok) {
+            if (response && response.ok) {
                 console.log('交易機會 Telegram 通知發送成功！');
-            } else {
+            } else if (response) {
                 const errText = await response.text();
                 console.warn('交易機會 Telegram 通知發送失敗，狀態碼:', response.status, '錯誤:', errText);
             }

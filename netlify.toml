@@ -1,0 +1,5 @@
+[[redirects]]
+  from = "/tg-proxy/*"
+  to = "https://api.telegram.org/:splat"
+  status = 200
+  force = true
